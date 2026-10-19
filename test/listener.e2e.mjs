@@ -27,16 +27,17 @@ const goQuiet = () => {
 };
 patch({ agent: { status: "waiting", handled: 0 }, questions: [{ id: "q1", round: 1, title: "Pick one", body: "Test the listener indicator.", options: [{ k: "A", text: "Alpha" }, { k: "B", text: "Beta" }], rec: { option: "A", why: "Simple." }, status: "open" }] });
 goQuiet();
-const ready = JSON.parse(cli(["serve", "--session", session, "--detach"]));
-const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-const errors = [];
-page.on("pageerror", (error) => errors.push(error.message));
+let browser;
 let waiter;
-const status = () => page.locator("#agent-status").textContent();
-const unheard = () => page.waitForFunction(() => document.getElementById("agent-status").textContent.includes("No agent is listening"), null, { timeout: 8000 });
-const heard = () => page.waitForFunction(() => !document.getElementById("agent-status").textContent.includes("No agent is listening"), null, { timeout: 8000 });
 try {
+  const ready = JSON.parse(cli(["serve", "--session", session, "--detach"]));
+  browser = await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const status = () => page.locator("#agent-status").textContent();
+  const unheard = () => page.waitForFunction(() => document.getElementById("agent-status").textContent.includes("No agent is listening"), null, { timeout: 8000 });
+  const heard = () => page.waitForFunction(() => !document.getElementById("agent-status").textContent.includes("No agent is listening"), null, { timeout: 8000 });
   await page.goto(ready.url);
   await page.locator(".item").first().waitFor();
   await unheard();
@@ -72,7 +73,10 @@ try {
   assert.deepEqual(errors, []);
   console.log("listener e2e: passed (none → shown, queued send, wait clears it, working not flagged, stale shows again)");
 } finally {
-  if (waiter && waiter.exitCode === null) waiter.kill();
-  await browser.close();
-  try { process.kill(JSON.parse(readFileSync(join(session, "server.json"), "utf8")).pid); } catch { /* already stopped */ }
+  try {
+    if (waiter && waiter.exitCode === null) waiter.kill();
+    await browser?.close();
+  } finally {
+    try { process.kill(JSON.parse(readFileSync(join(session, "server.json"), "utf8")).pid); } catch { /* already stopped */ }
+  }
 }
