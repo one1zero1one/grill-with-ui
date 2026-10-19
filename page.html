@@ -9,10 +9,19 @@
     color-scheme: light dark;
     --bg: light-dark(#f7f4ee, #16130f); --panel: light-dark(#ffffff, #1e1a15); --ink: light-dark(#1f1c18, #ece7dd);
     --ink-2: light-dark(#625b51, #b3aa9c); --ink-3: light-dark(#9a9285, #7d7568); --rule: light-dark(#e6e0d4, #322c24); --hover: light-dark(#efebe3, #2a241d);
-    --accent: light-dark(#9a3a26, #e0785c); --ok: light-dark(#3d6b4a, #7fb08d); --ok-soft: light-dark(#e3eee5, #1f2b22); --ok-deep: light-dark(#2f5a3b, #6ea07c); --ok-pulse: light-dark(#7fb08d, #a9d6b6);
+    --accent: light-dark(#9a3a26, #d9d1c3); --ok: light-dark(#3d6b4a, #7fb08d); --ok-soft: light-dark(#e3eee5, #1f2b22); --ok-deep: light-dark(#2f5a3b, #6ea07c); --ok-pulse: light-dark(#7fb08d, #a9d6b6);
     --stage: light-dark(#b8791f, #d9a441); --stage-soft: light-dark(#f8ecd2, #2e2616); --warn-soft: light-dark(#fbe9e4, #38211b);
     /* Text and ticks on an --accent or --ok fill. Those fills turn light in the dark theme, where white on them drops to 3:1 and below. */
     --on-fill: light-dark(#ffffff, #16130f);
+    /* Importance levels and rating chips. In the dark theme the accent is a neutral off-white, so
+       red means only Decide carefully (its own --careful, which never moves with the accent) or a
+       poor rating. */
+    --accent-soft: light-dark(#fbefeb, #2c2720); --accent-line: light-dark(#e7c9c0, #4a4238);
+    --careful: light-dark(#9a3a26, #e0785c); --careful-soft: light-dark(#fbefeb, #38211b); --careful-line: light-dark(#e7c9c0, #5a2e24); --stage-line: light-dark(#ecd6ae, #4a3a1c);
+    --taste: light-dark(#5d4a86, #b4a2e0); --taste-soft: light-dark(#f1edf7, #251f33); --taste-line: light-dark(#d6cde6, #3d3352);
+    --chip-g-bg: light-dark(#e3eee5, #1f2b22); --chip-g-ink: light-dark(#2f5a3b, #8fc29d); --chip-g-line: light-dark(#c7dccb, #2f4a36);
+    --chip-x-bg: light-dark(#f8ecd2, #2e2616); --chip-x-ink: light-dark(#7f5413, #e0b45a); --chip-x-line: light-dark(#ead3a2, #4a3a1c);
+    --chip-p-bg: light-dark(#fbe4dd, #38211b); --chip-p-ink: light-dark(#9a3a26, #ec8b72); --chip-p-line: light-dark(#f0c7bb, #5a2e24);
     --serif: "Iowan Old Style", Charter, Georgia, serif;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   }
@@ -48,7 +57,7 @@
   header.working #progress { display: block; }
   #progress::after { content: ""; position: absolute; top: 0; bottom: 0; width: 30%; background: var(--stage); animation: slide 1.4s ease-in-out infinite; }
   @keyframes slide { from { left: -30%; } to { left: 100%; } }
-  #terms-toggle, #visualize { font-size: 12px; padding: 4px 10px; }
+  #levels-toggle, #terms-toggle, #visualize { font-size: 12px; padding: 4px 10px; }
   #theme-toggle { display: inline-flex; align-items: center; padding: 4px 8px; }
   #theme-toggle svg { display: none; width: 15px; height: 15px; }
   #theme-toggle[data-mode="system"] .i-system, #theme-toggle[data-mode="light"] .i-light, #theme-toggle[data-mode="dark"] .i-dark { display: block; }
@@ -66,16 +75,28 @@
   #terms.show { display: block; }
   .term { padding: 8px 0; border-bottom: 1px solid var(--rule); font-size: 14px; } .term:last-child { border-bottom: 0; }
   .term b { font-family: var(--serif); font-weight: 500; font-size: 15px; } .term .avoid { color: var(--ink-3); font-size: 12px; }
+  #levels { display: none; position: absolute; right: 24px; top: 100%; width: 400px; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 16px; box-shadow: 0 8px 24px rgba(0,0,0,.08); z-index: 5; font-size: 13px; }
+  #levels.show { display: block; }
+  #levels h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  .lv-row { display: grid; grid-template-columns: 22px 120px 1fr; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--rule); }
+  .lv-row:last-child { border-bottom: 0; }
+  .lv-row b { font-weight: 600; font-size: 13px; } .lv-row .d { color: var(--ink-2); }
+  .sdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+  .sdot.yours { border-radius: 1px; transform: rotate(45deg); width: 8px; height: 8px; }
+  .sdot.skim { background: transparent; border: 1.5px solid currentColor; }
+  .lvc-careful { color: var(--careful); } .lvc-yours { color: var(--taste); } .lvc-check { color: var(--stage); } .lvc-skim { color: var(--ink-3); }
 
   nav { grid-row: 3; grid-column: 1; border-right: 1px solid var(--rule); overflow-y: auto; padding: 10px 0 24px; }
   nav .note { margin: 6px 14px 4px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; font-size: 13px; color: var(--ink-2); }
   nav .round { padding: 16px 20px 6px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); display: flex; justify-content: space-between; }
   nav .round.current { color: var(--accent); }
-  .item { display: grid; grid-template-columns: 30px 1fr auto; gap: 8px; align-items: baseline; padding: 8px 20px; cursor: pointer; }
+  .item { display: grid; grid-template-columns: 30px 1fr auto; gap: 0 8px; align-items: baseline; padding: 8px 20px; cursor: pointer; }
   .item:hover { background: var(--hover); }
   .item.selected { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
   .item .id { font-size: 12px; color: var(--ink-3); }
   .item .t { font-size: 14px; }
+  /* Only Decide carefully and Your call rows carry a word; Skim and Check rows carry no mark. */
+  .item .sword { grid-column: 2; font-size: 11px; font-weight: 600; letter-spacing: .02em; margin-top: 1px; } .item .sword.done { opacity: .45; }
   .item .mark { font-size: 11px; color: var(--ink-3); display: inline-flex; align-items: center; gap: 4px; }
   .item .mark svg { width: 12px; height: 12px; }
   .mark.answered { color: var(--ok); } .mark.open, .mark.reopened { color: var(--accent); } .mark.staged { color: var(--stage); font-weight: 600; } .mark.pending { color: var(--stage); }
@@ -99,6 +120,13 @@
   .card { max-width: 680px; }
   .crumb { font-size: 12px; color: var(--ink-3); display: flex; gap: 12px; flex-wrap: wrap; }
   .crumb a { text-decoration: none; } .crumb .upd { color: var(--stage); }
+  .imp { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; padding: 4px 10px; border-radius: 999px; font-size: 12px; border: 1px solid; }
+  .imp b { font-weight: 600; letter-spacing: .06em; text-transform: uppercase; font-size: 11px; }
+  .imp .why-l { color: var(--ink-2); }
+  .imp.careful { color: var(--careful); border-color: var(--careful-line); background: var(--careful-soft); }
+  .imp.check { color: var(--stage); border-color: var(--stage-line); background: var(--stage-soft); }
+  .imp.skim { color: var(--ink-3); border-color: var(--rule); background: var(--bg); }
+  .imp.yours { color: var(--taste); border-color: var(--taste-line); background: var(--taste-soft); }
   .title-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 8px 0 12px; }
   .card h2 { font-family: var(--serif); font-weight: 500; font-size: 30px; line-height: 1.15; margin: 0; }
   #explore { font-size: 13px; padding: 6px 12px; flex-shrink: 0; }
@@ -113,9 +141,15 @@
   .opt .k { font-family: var(--serif); font-size: 18px; line-height: 1.2; color: var(--ink-3); }
   .opt.rec { border-color: var(--accent); } .opt.rec .k { color: var(--accent); }
   .opt .tag { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin-bottom: 2px; }
+  .opt.lean { border-color: var(--taste); } .opt.lean .k, .opt.lean .tag { color: var(--taste); }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .chip { font-size: 11.5px; line-height: 1; padding: 4px 8px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
+  .chip.g { background: var(--chip-g-bg); color: var(--chip-g-ink); border-color: var(--chip-g-line); }
+  .chip.x { background: var(--chip-x-bg); color: var(--chip-x-ink); border-color: var(--chip-x-line); }
+  .chip.p { background: var(--chip-p-bg); color: var(--chip-p-ink); border-color: var(--chip-p-line); }
   .opt.chosen { background: var(--ok-soft); border-color: var(--ok); } .opt.chosen .k, .opt.chosen .tag { color: var(--ok); } .opt.chosen .check { visibility: visible; }
   /* Once an answer is picked (staged or recorded), everything but the picked box reads as disabled; hover or focus wakes a part back up. */
-  .card.picked .body, .card.picked .why, .card.picked .answer-row, .card.picked .links, .card.picked .opt:not(.chosen):not(.staged):not(.pending) { opacity: .45; transition: opacity .15s; }
+  .card.picked .body, .card.picked .why, .card.picked .note-taste, .card.picked .answer-row, .card.picked .links, .card.picked .opt:not(.chosen):not(.staged):not(.pending) { opacity: .45; transition: opacity .15s; }
   .card.picked .opt:not(.chosen):not(.staged):not(.pending):hover, .card.picked .answer-row:focus-within, .card.picked .links:hover { opacity: 1; }
   .opt.text-answer { cursor: default; } .opt.text-answer .tag { color: var(--ok); } .opt.text-answer:hover { border-color: var(--ok); }
   .opt.staged { border-color: var(--stage); box-shadow: 0 0 0 1px var(--stage); background: var(--stage-soft); }
@@ -124,6 +158,7 @@
   .multi-hint { margin: 16px 0 0; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
   .multi-hint + .opts { margin-top: 8px; }
   .why { margin: 14px 0 0; font-size: 14px; color: var(--ink-2); white-space: pre-line; } .why b { color: var(--accent); font-weight: 600; }
+  .why.lean b { color: var(--taste); } .note-taste { margin: 10px 0 0; font-size: 13px; color: var(--taste); }
   .staged-line { margin-top: 10px; font-size: 14px; color: var(--stage); } .staged-line a { color: var(--ink-3); font-size: 12px; margin-left: 8px; }
   .pending-line { margin-top: 10px; font-size: 14px; color: var(--stage); display: flex; align-items: center; gap: 8px; }
   .answer-row { display: flex; gap: 8px; margin-top: 20px; align-items: flex-start; }
@@ -205,7 +240,7 @@
     footer { position: sticky; bottom: 0; z-index: 4; flex-wrap: wrap; gap: 8px 12px; padding: 10px 16px; }
 
     /* the fixed 420px width overflows a 390px screen */
-    #terms { left: 12px; right: 12px; width: auto; max-height: 50vh; }
+    #terms, #levels { left: 12px; right: 12px; width: auto; max-height: 50vh; }
 
     /* #visual-frame is height:100%, so the pane needs a resolved height */
     #visual { height: 78vh; }
@@ -240,6 +275,13 @@
   <h1 id="topic">grill</h1>
   <span class="path" id="doc-path"></span>
   <span id="intent"></span>
+  <button id="levels-toggle" type="button" hidden>Levels</button>
+  <div id="levels"><h4>Importance levels</h4>
+    <div class="lv-row"><span class="sdot careful lvc-careful"></span><b>Decide carefully</b><span class="d">High stakes and a close call: your judgement changes the outcome.</span></div>
+    <div class="lv-row"><span class="sdot yours lvc-yours"></span><b>Your call</b><span class="d">Taste or preference; the agent only has a lean.</span></div>
+    <div class="lv-row"><span class="sdot check lvc-check"></span><b>Check</b><span class="d">Stakes are real but the answer is clear: read the why and confirm.</span></div>
+    <div class="lv-row"><span class="sdot skim lvc-skim"></span><b>Skim</b><span class="d">Low stakes: accept unless something jumps out.</span></div>
+  </div>
   <button id="terms-toggle" type="button">Terms</button>
   <div id="terms"></div>
   <button id="visualize" type="button" hidden>Visualize</button>
@@ -286,7 +328,27 @@ const byId = (id) => qs().find((q) => q.id === id);
 const isOpen = (q) => q.status === "open" || q.status === "reopened";
 const curRound = () => qs().reduce((m, q) => Math.max(m, Number(q.round) || 0), 0);
 const rounds = () => { const m = new Map(); for (const q of qs()) { const r = Number(q.round) || 0; if (!m.has(r)) m.set(r, []); m.get(r).push(q); } return [...m.entries()].sort((a, b) => a[0] - b[0]); };
-const firstOpen = () => qs().filter((q) => isOpen(q) && Number(q.round) === curRound())[0] || qs().find(isOpen) || qs()[qs().length - 1] || null;
+const firstOpen = () => byLevel(qs().filter((q) => isOpen(q) && Number(q.round) === curRound()))[0] || qs().find(isOpen) || qs()[qs().length - 1] || null;
+// Importance levels: how much attention a question deserves. Within a round the list sorts where
+// your judgment matters first; a question with no level sorts with Check, and a round with no
+// levels at all keeps its order, so an older session looks exactly as it did.
+const LEVEL_NAMES = { careful: "Decide carefully", yours: "Your call", check: "Check", skim: "Skim" };
+const LEVEL_RANK = { careful: 0, yours: 1, check: 2, skim: 3 };
+const levelOf = (q) => (q && typeof q.level === "string" && Object.hasOwn(LEVEL_NAMES, q.level) ? q.level : null);
+const byLevel = (list) => (!list.some(levelOf) ? list
+  : list.slice().sort((a, b) => LEVEL_RANK[levelOf(a) || "check"] - LEVEL_RANK[levelOf(b) || "check"] || String(a.id).localeCompare(String(b.id), undefined, { numeric: true })));
+// Ratings: each option scored good|mixed|poor|na on the grill's axes (these four unless the agent
+// replaced them at the start). One chip per rated axis, in axis order; "na" and unrated axes show none.
+const DEFAULT_AXES = [{ key: "ux", name: "User experience" }, { key: "correct", name: "Technical correctness" }, { key: "risk", name: "Risk" }, { key: "cost", name: "Cost" }];
+const axes = () => (S && Array.isArray(S.axes) && S.axes.length ? S.axes.filter((a) => a && typeof a.key === "string") : DEFAULT_AXES);
+const RATING_CLASS = { good: "g", mixed: "x", poor: "p" };
+function chipRow(o) {
+  const r = o && o.ratings && typeof o.ratings === "object" ? o.ratings : null;
+  if (!r) return "";
+  const chips = axes().filter((a) => typeof r[a.key] === "string" && Object.hasOwn(RATING_CLASS, r[a.key]))
+    .map((a) => `<span class="chip ${RATING_CLASS[r[a.key]]}" title="${esc(a.name)}: ${esc(r[a.key])}">${esc(a.name)}</span>`).join("");
+  return chips ? `<div class="chips">${chips}</div>` : "";
+}
 const locked = () => !!(S && S.finished);
 const visual = () => (S && S.visual && typeof S.visual === "object" ? S.visual : null);
 const hasVisual = () => { const v = visual(); return !!v && (Number(v.version) || 0) >= 1; }; // version 0 = first draw still running, nothing to show
@@ -490,6 +552,8 @@ function renderHeader() {
   $("terms").innerHTML = terms.length
     ? terms.map((t) => `<div class="term"><b>${esc(t.term)}</b> — ${esc(t.def)}${t.avoid && t.avoid.length ? `<div class="avoid">Avoid: ${t.avoid.map(esc).join(", ")}</div>` : ""}</div>`).join("")
     : `<div class="term" style="color:var(--ink-3)">No terms yet. The agent adds vocabulary here as it settles.</div>`;
+  const levelled = qs().some(levelOf);
+  $("levels-toggle").hidden = !levelled; if (!levelled) $("levels").classList.remove("show");
   renderVisualizeButton();
   renderStatus();
 }
@@ -542,17 +606,22 @@ function renderNav() {
   const all = rounds();
   if (!all.length) { nav.insertAdjacentHTML("beforeend", `<div class="empty">Waiting for the first round…</div>`); return; }
   const cur = curRound();
-  for (const [r, list] of all) {
+  for (const [r, inRound] of all) {
+    const list = byLevel(inRound);
     const h = document.createElement("div"); h.className = "round" + (r === cur ? " current" : "");
     h.innerHTML = `<span>Round ${r}${r === cur ? " · current" : ""}</span><span>${list.length}</span>`; nav.appendChild(h);
     for (const q of list) {
       const s = local.staged[q.id];
       const el = document.createElement("div");
       el.className = "item" + (q.id === selected ? " selected" : "") + (q.updated ? " updated" : "");
+      el.dataset.q = q.id;
+      const lv = levelOf(q);
+      if (lv) el.title = LEVEL_NAMES[lv] + (q.levelReason ? " · " + q.levelReason : "");
+      const word = lv === "careful" || lv === "yours" ? `<span class="sword lvc-${lv}${q.status === "answered" ? " done" : ""}">${LEVEL_NAMES[lv]}</span>` : "";
       const mark = s ? `<span class="mark staged">staged</span>`
         : pendingActions(q.id).some((a) => a.type !== "explore") ? `<span class="mark pending"><span class="spin"></span>sent</span>`
         : `<span class="mark ${esc(q.status)}">${q.status === "answered" ? CHECK + esc(keyLabel(q.answer) || "text") : esc(q.status)}</span>`;
-      el.innerHTML = `<span class="id">${esc(q.id).toUpperCase()}</span><span class="t">${esc(q.title)}</span>${mark}`;
+      el.innerHTML = `<span class="id">${esc(q.id).toUpperCase()}</span><span class="t">${esc(q.title)}</span>${mark}${word}`;
       el.onclick = () => { selected = q.id; render(); };
       nav.appendChild(el);
     }
@@ -566,22 +635,25 @@ function renderMain() {
   const rec = q.rec || {};
   const crumb = [`${esc(q.id).toUpperCase()} · round ${esc(q.round)}`];
   crumb.push(q.deps && q.deps.length ? `<span>after ${q.deps.map((x) => `<a href="#" data-go="${esc(x)}">${esc(x).toUpperCase()}</a>`).join(", ")}</span>` : `<span>root</span>`);
-  if (q.durable) crumb.push(`<span>durable</span>`);
   if (q.updated) crumb.push(`<span class="upd">recommendation updated</span>`);
   if (q.status === "deferred") crumb.push(`<span>deferred</span>`);
   if (q.status === "reopened") crumb.push(`<span>reopened</span>`);
+  // Your call: the agent only has a lean, and the axes do not separate the options, so no chips.
+  const lv = levelOf(q), yours = lv === "yours";
+  const pill = lv ? `<div class="imp ${lv}"><b>${LEVEL_NAMES[lv]}</b>${q.levelReason ? `<span class="why-l">${esc(q.levelReason)}</span>` : ""}</div>` : "";
   const pend = pendingActions(q.id);
   const pendAnswer = pend.filter((a) => a.type === "answer").pop() || null;
   const opts = (q.options || []).map((o) => {
     // A multi question shows one set at a time: the staged set, else the one in flight, else the recorded one.
     const shadow = isMulti(q) && (s.answer || pendAnswer);
     const isRec = recKeys(q).includes(o.k), chosen = !shadow && keysOf(q.answer).includes(o.k), staged = keysOf(s.answer).includes(o.k), pending = !staged && !(isMulti(q) && s.answer) && keysOf(pendAnswer).includes(o.k);
-    return `<li class="opt${isRec ? " rec" : ""}${chosen ? " chosen" : ""}${staged ? " staged" : ""}${pending ? " pending" : ""}" data-opt="${esc(o.k)}"><span class="k">${esc(o.k)}</span><span>${isRec ? `<div class="tag">Recommended</div>` : ""}${esc(o.text)}</span>${pending ? `<span class="check pending"><span class="spin"></span></span>` : `<span class="check">${CHECK}</span>`}</li>`;
+    return `<li class="opt${isRec ? (yours ? " lean" : " rec") : ""}${chosen ? " chosen" : ""}${staged ? " staged" : ""}${pending ? " pending" : ""}" data-opt="${esc(o.k)}"><span class="k">${esc(o.k)}</span><span>${isRec ? `<div class="tag">${yours ? "My lean" : "Recommended"}</div>` : ""}${esc(o.text)}${yours ? "" : chipRow(o)}</span>${pending ? `<span class="check pending"><span class="spin"></span></span>` : `<span class="check">${CHECK}</span>`}</li>`;
   }).join("") + (q.status === "answered" && q.answer && q.answer.kind === "text" && q.answer.text
     ? `<li class="opt chosen text-answer"><span class="k"></span><span><div class="tag">Your answer</div>${esc(q.answer.text)}</span><span class="check">${CHECK}</span></li>` : "")
     + (pendAnswer && pendAnswer.kind === "text" && pendAnswer.text
     ? `<li class="opt pending text-answer"><span class="k"></span><span><div class="tag">Your answer · sending</div>${esc(pendAnswer.text)}</span><span class="check pending"><span class="spin"></span></span></li>` : "");
-  const why = recKeys(q).length ? `<p class="why"><b>Why ${esc(keyLabel(rec))}.</b> ${esc(rec.why)}</p>`
+  const why = recKeys(q).length && yours ? `<p class="why lean"><b>Leaning ${esc(keyLabel(rec))}.</b> ${esc(rec.why)}</p><p class="note-taste">This one is yours: the axes do not separate these options, so there are no ratings.</p>`
+    : recKeys(q).length ? `<p class="why"><b>Why ${esc(keyLabel(rec))}.</b> ${esc(rec.why)}</p>`
     : rec.text ? `<p class="why"><b>Suggested.</b> ${esc(rec.text)}${rec.why ? " — " + esc(rec.why) : ""}</p>` : rec.why ? `<p class="why">${esc(rec.why)}</p>` : "";
   let stagedLine = "";
   if (s.defer) stagedLine = "Staged: defer this question";
@@ -603,6 +675,7 @@ function renderMain() {
   const picked = (q.status === "answered" && q.answer) || !!s.answer || !!pendAnswer;
   main.innerHTML = `<article class="card${lk ? " locked" : ""}${picked ? " picked" : ""}">
       <div class="crumb">${crumb.join("")}</div>
+      ${pill}
       <div class="title-row"><h2>${esc(q.title)}</h2>${exploreBtn}</div>
       <p class="body">${esc(q.body)}</p>
       ${opts && isMulti(q) ? `<p class="multi-hint">Pick one or more</p>` : ""}
@@ -700,7 +773,8 @@ $("send").onclick = send;
 $("intent").onclick = () => { if ($("intent").classList.contains("show")) { intentOpen = !intentOpen; render(); } };
 $("use-subagent").onchange = (e) => { local.subagent = e.target.checked; commit(); };
 $("visualize").onclick = () => { if (hasVisual()) { local.view = activeView() === "visualize" ? "questions" : "visualize"; commit(); } else visualize(); };
-$("terms-toggle").onclick = () => $("terms").classList.toggle("show");
+$("terms-toggle").onclick = () => { $("levels").classList.remove("show"); $("terms").classList.toggle("show"); };
+$("levels-toggle").onclick = () => { $("terms").classList.remove("show"); $("levels").classList.toggle("show"); };
 // ---- theme: data-theme forces light/dark; "system" follows the OS via light-dark() ----
 const THEMES = ["system", "light", "dark"];
 let theme = document.documentElement.dataset.theme || "system";
@@ -716,7 +790,10 @@ $("theme-toggle").onclick = () => {
   fetch("/theme", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ theme }) }).catch(() => {});
 };
 applyTheme();
-document.addEventListener("click", (e) => { if (!e.target.closest("#terms") && !e.target.closest("#terms-toggle")) $("terms").classList.remove("show"); });
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#terms") && !e.target.closest("#terms-toggle")) $("terms").classList.remove("show");
+  if (!e.target.closest("#levels") && !e.target.closest("#levels-toggle")) $("levels").classList.remove("show");
+});
 document.addEventListener("keydown", (e) => {
   if (!((e.metaKey || e.ctrlKey) && e.key === "Enter")) return;
   // First press in a compose box stages the draft so a second press can send it.

@@ -85,6 +85,14 @@ appears in the discussion panel when the agent is done. The agent answers
 threads, writes the tables, records your answers, and adds the next round of questions to
 the page.
 
+Each card says how much attention it deserves: an **importance level** (Skim, Check, Decide
+carefully, or Your call) with a one-line reason; **Levels** in the header explains them. The
+question list puts Decide carefully and Your call first within each round and labels only
+those two. Under each option a row of chips rates it on user experience, technical
+correctness, risk, and cost (green good, yellow mixed, red poor), so the trade-offs read at
+a glance; the agent swaps in its own axes at the start only when those clearly do not fit
+the topic. A Your-call question is taste, so it shows the agent's **My lean** and no chips.
+
 **Visualize** in the header asks the agent for one picture of the design so far: an
 interactive HTML prototype when the topic is a UI, an architecture or flow diagram
 otherwise. When the topic is a change to an existing app, the prototype is drawn inside the

@@ -614,6 +614,85 @@ test("patch: every field the page renders must have the shape the render reads, 
   });
 });
 
+// ---- importance levels and option ratings (docs/importance-and-ratings-design.md) ----
+const rated = (ux, correct, risk, cost) => ({ ux, correct, risk, cost });
+const ratedOpts = () => [
+  { k: "A", text: "Alpha", ratings: rated("good", "good", "mixed", "good") },
+  { k: "B", text: "Beta", ratings: rated("mixed", "poor", "good", "na") },
+];
+
+test("patch: old sessions without axes, levels or ratings pass untouched; new questions get no level by default", () => {
+  const session = seeded({ questions: [qn("q1", 1, { durable: true })] });
+  assert.ok(!("axes" in stateOf(session)), "new writes no axes: absent means the default four");
+  applied(session, { note: "still fine", questions: [{ id: "q2", round: 2, title: "Plain", rec: { option: "A", why: "w" }, options: [{ k: "A", text: "a" }] }] });
+  const st = stateOf(session);
+  assert.ok(!("axes" in st));
+  for (const q of st.questions) {
+    for (const k of ["level", "levelReason"]) assert.ok(!(k in q), `${q.id} gets no ${k} by default`);
+    for (const o of q.options) assert.ok(!("ratings" in o), `${q.id}.${o.k} gets no ratings by default`);
+  }
+  assert.equal(st.questions[0].durable, true, "durable stays in state");
+});
+
+test("patch: a question's level and levelReason, and each option's ratings on the default axes", () => {
+  const session = seeded({ questions: [qn("q1", 1)] });
+  applied(session, { questions: [
+    { id: "q1", level: "careful", levelReason: "high stakes, close call", options: ratedOpts() },
+    { id: "q2", round: 1, title: "Skim one", rec: { option: "A", why: "w" }, level: "skim", levelReason: "low stakes",
+      options: [{ k: "A", text: "a", ratings: { ux: "good" } }, { k: "B", text: "b", ratings: {} }] },
+    { id: "q3", round: 1, title: "Check one", rec: { option: "A", why: "w" }, level: "check", levelReason: "high stakes, clear answer", options: [{ k: "A", text: "a" }] },
+    { id: "q4", round: 1, title: "Taste", rec: { option: "B", why: "calmer" }, level: "yours", levelReason: "taste; no axis separates the options",
+      options: [{ k: "A", text: "Not synced" }, { k: "B", text: "Local only" }] },
+  ] });
+  const st = stateOf(session);
+  assert.equal(st.questions[0].level, "careful");
+  assert.equal(st.questions[0].levelReason, "high stakes, close call");
+  assert.deepEqual(st.questions[0].options[1].ratings, rated("mixed", "poor", "good", "na"));
+  assert.deepEqual(st.questions[1].options[0].ratings, { ux: "good" }, "an axis left out is allowed (no chip)");
+  assert.deepEqual(st.questions.map((q) => q.level), ["careful", "skim", "check", "yours"]);
+
+  rejected(session, { questions: [{ id: "q1", level: "urgent" }] }, /q1\.level must be one of skim\|check\|careful\|yours/);
+  rejected(session, { questions: [{ id: "q1", level: "Careful" }] }, /q1\.level/);
+  rejected(session, { questions: [{ id: "q1", levelReason: 5 }] }, /q1\.levelReason must be a string/);
+  // a level needs its reason line
+  rejected(session, { questions: [{ id: "q1", levelReason: null }] }, /q1\.levelReason/);
+  rejected(session, { questions: [{ id: "q1", levelReason: "  " }] }, /q1\.levelReason/);
+  const bad = (ratings) => ({ questions: [{ id: "q1", options: [{ k: "A", text: "Alpha", ratings }] }] });
+  rejected(session, bad({ speed: "good" }), /q1\.options\[0\]\.ratings.*speed.*not an axis.*ux, correct, risk, cost/);
+  rejected(session, bad({ ux: "great" }), /q1\.options\[0\]\.ratings\.ux must be one of good\|mixed\|poor\|na/);
+  rejected(session, bad(["good"]), /q1\.options\[0\]\.ratings must be an object/);
+  rejected(session, bad("good"), /q1\.options\[0\]\.ratings must be an object/);
+  // A Your-call question carries no ratings: the axes do not separate its options.
+  rejected(session, { questions: [{ id: "q4", options: [{ k: "A", text: "Not synced", ratings: { ux: "good" } }, { k: "B", text: "Local only" }] }] },
+    /q4 is a Your-call question.*ratings/);
+  // moving a rated question to yours means dropping its ratings in the same patch
+  rejected(session, { questions: [{ id: "q1", level: "yours" }] }, /q1 is a Your-call question.*ratings/);
+  applied(session, { questions: [{ id: "q1", level: "yours", levelReason: "taste", options: [{ k: "A", text: "Alpha" }, { k: "B", text: "Beta" }] }] });
+  assert.equal(stateOf(session).questions[0].level, "yours");
+});
+
+test("patch: axes replace the default set; ratings must use the grill's axis keys", () => {
+  const session = seeded({ questions: [qn("q1", 1, { level: "check", levelReason: "high stakes, clear answer", options: ratedOpts() })] });
+  // Swapping the axes under existing ratings fails: those ratings name axes that would no longer exist.
+  rejected(session, { axes: [{ key: "reach", name: "Reach" }, { key: "spend", name: "Spend" }] }, /q1\.options\[0\]\.ratings.*ux.*not an axis.*reach, spend/);
+
+  const fresh = seeded({ questions: [] });
+  applied(fresh, { axes: [{ key: "reach", name: "Reach" }, { key: "spend", name: "Ad spend" }], questions: [
+    { id: "q1", round: 1, title: "Channel", rec: { option: "A", why: "w" }, level: "careful", levelReason: "high stakes, close call",
+      options: [{ k: "A", text: "Email", ratings: { reach: "mixed", spend: "good" } }, { k: "B", text: "Ads", ratings: { reach: "good", spend: "poor" } }] },
+  ] });
+  assert.deepEqual(stateOf(fresh).axes, [{ key: "reach", name: "Reach" }, { key: "spend", name: "Ad spend" }]);
+  rejected(fresh, { questions: [{ id: "q1", options: [{ k: "A", text: "Email", ratings: { ux: "good" } }] }] }, /ux.*not an axis.*reach, spend/);
+
+  rejected(fresh, { axes: [] }, /axes must be a non-empty array/);
+  rejected(fresh, { axes: "ux" }, /axes must be a non-empty array/);
+  rejected(fresh, { axes: [{ key: "reach" }, { key: "spend", name: "Spend" }] }, /axes\[0\].*key.*name/);
+  rejected(fresh, { axes: [{ key: "", name: "Blank" }] }, /axes\[0\]/);
+  rejected(fresh, { axes: [{ key: "reach", name: "Reach" }, { key: "reach", name: "Reach again" }] }, /axis key reach appears twice/);
+  applied(fresh, { axes: null, questions: [{ id: "q1", options: [{ k: "A", text: "Email" }, { k: "B", text: "Ads" }] }] });
+  assert.ok(!("axes" in stateOf(fresh)), "axes: null goes back to the default four");
+});
+
 test("patch: a stdin that cannot be read exits non-zero with one stderr line and leaves state.json untouched", () => {
   const session = seeded({ questions: [qn("q1", 1)] });
   const before = rawState(session);

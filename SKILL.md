@@ -64,8 +64,8 @@ The patch is shaped like `state.json` (schema at the end):
   that field whole (`rec`, `answer`, `options`, `deps`, `explore`). An unknown id is a new
   question, appended; it needs `round`, `title`, and `rec` (give `body` and `options` too);
   `status: "open"`, `deps: []`, `options: []`, `thread: []`, `durable: false`, and
-  `updated: false` are filled in. An unknown id without `title` is an error, not a new
-  question (ids are case-sensitive: `q7`, never `Q7`).
+  `updated: false` are filled in (`level` is not: give it). An unknown id without `title` is
+  an error, not a new question (ids are case-sensitive: `q7`, never `Q7`).
 - `thread` (on a question and on `visual`) and `visual.queued` append: list only the new
   messages or bullets.
 - `terms` is keyed by `term`: a known term is replaced whole, a new one appended.
@@ -90,9 +90,12 @@ node $SKILL/server.mjs patch --session <session> <<'GRILL_PATCH'
       { "who": "agent", "text": "localStorage is per browser profile, so a second browser or a cleared profile loses them. The session folder survives both, at the cost of one more file." } ] },
     { "id": "q7", "round": 4, "deps": ["q2"], "title": "Who owns the retry budget?",
       "body": "With the server-side queue settled in Q2, retries need an owner.",
-      "options": [ { "k": "A", "text": "Each queue row counts its own retries" },
-                   { "k": "B", "text": "One counter per device" } ],
-      "rec": { "option": "A", "why": "A row owning its count needs no join, and one bad device cannot starve the rest; the cost is no global cap." } }
+      "level": "check", "levelReason": "high stakes, clear answer",
+      "options": [ { "k": "A", "text": "Each queue row counts its own retries",
+                     "ratings": { "ux": "good", "correct": "good", "risk": "mixed", "cost": "good" } },
+                   { "k": "B", "text": "One counter per device",
+                     "ratings": { "ux": "mixed", "correct": "poor", "risk": "poor", "cost": "good" } } ],
+      "rec": { "option": "A", "why": "A row owning its count needs no join, and one bad device cannot starve the rest. Its weakest axis is risk: there is no global cap." } }
   ]
 }
 GRILL_PATCH
@@ -109,7 +112,8 @@ GRILL_PATCH
    The page shows it under the topic so several open
    grills stay distinguishable. It prints one JSON line; keep `session` (the session folder).
 2. Patch round 1 in (`new` already wrote the skeleton): one to three independent questions,
-   each with lettered options, one recommendation, and a one-paragraph why, plus any `terms`
+   each with lettered options, a level, ratings, one recommendation, and a one-paragraph why
+   (see Interview method), plus any `terms`, `axes` if the default four do not fit the topic,
    and `"agent": { "status": "waiting" }`.
 3. Open a **persistent Monitor** (`persistent: true`) whose command is
    `node $SKILL/server.mjs serve --session <session>`, description `grill page: <topic>`.
@@ -220,6 +224,32 @@ decisions in order:
 - Every question has a `title`, a `body` that states what hangs on it, lettered `options`
   (two to four), and `rec` with the recommended option and a one-paragraph `why` that names
   the trade-off. A question with no sensible options has `options: []` and `rec.text`.
+- Every question has a `level`, how much of the user's attention it deserves, from
+  **stakes** (how costly a wrong pick is: hard to reverse, far-reaching) and **closeness**
+  (how near the call is between the options), plus a `levelReason` saying which drove it:
+  - `skim`: low stakes, whatever the closeness (`"low stakes"`).
+  - `check`: high stakes, clear answer; the user reads the why and confirms
+    (`"high stakes, clear answer"`).
+  - `careful` (Decide carefully): high stakes, close call; this is where their time goes
+    (`"high stakes, close call"`).
+  - `yours` (Your call): pure preference you cannot judge, such as naming, wording, or taste.
+    The page shows your pick as **My lean**; still give `rec`, and picking it is an accept.
+- Rate every option of every question, except Your-call ones, on the grill's **axes**:
+  `ratings: { "<axis key>": "good|mixed|poor|na" }`, `na` where an axis does not apply. The
+  page shows them as coloured chips under the option. The default axes are `ux` (user
+  experience: how it feels to the person using it), `correct` (technical correctness: works
+  as intended, fits the system, not a burden to maintain), `risk` (what can go wrong and how
+  badly, including lock-in), and `cost` (the recurring bill each time it runs: money,
+  tokens, latency; never build effort). Replace them only when they clearly do not fit the
+  topic (a pricing grill, a promo video), once, in the round 1 patch:
+  `"axes": [{ "key": "reach", "name": "Reach" }, …]`. Never change them mid-grill.
+- Keep ratings and recommendation honest with each other. The `why` names the
+  recommendation's **weakest axis** and what it gives up there ("Its weakest axis is risk:
+  leaving the format later is a migration"), saying whether a poor `risk` means "could
+  break" or "hard to undo". When the pick is best or tied on every axis, say so plainly ("best
+  on every axis; it costs nothing here") rather than inventing a weakness; such a question is
+  not a close call, so it is never `careful` on closeness grounds. A Your-call question has no
+  ratings (`patch` rejects them): the axes do not separate its options.
 - When the options do not exclude each other and the user may want any mix of them (which
   channels to support, which checks to run, which roles get access), set `multi: true` and
   recommend a set: `rec.options: ["A","C"]` instead of `rec.option`. The page lets the user
@@ -232,6 +262,7 @@ decisions in order:
   not to use for it). Use the terms consistently in later questions.
 - Set `durable: true` on a question whose decision passes all three gates: hard to reverse,
   surprising without context, a real trade-off. Everything else is a routine choice.
+  `durable` shapes only the doc (see Finish); the page shows the level, never `durable`.
 - Stop asking when the tree is walked. Say so with `note`; do not pad with filler questions.
 
 ## Visualize
@@ -366,12 +397,15 @@ On a `finish` action, or when the user says finish in the terminal:
    self-contained, in this order: a one-paragraph summary (linking the visual at
    `docs/<slug>-visual.html` when there is one, see step 3); **Terms** (each with its
    Avoid list); **Why** (the problem in the user's words); **Locked decisions** (every
-   `durable` question: the decision, the rejected options and why each lost); **Routine
-   choices** (every other answered question, one bullet each); **Verified facts** (anything
-   you established by exploring rather than asking, if any); **Risks**; **Deferred**
+   `durable` question: the decision, a ratings table with options as rows and axes as
+   columns, the decision in bold and every rating as a word (good / mixed / poor, a dash for
+   `na`), then the rejected options and why each lost, and what the decision gives up on its
+   weakest axis); **Routine choices** (every other answered question, one bullet each);
+   **Verified facts** (anything you established by exploring rather than asking, if any);
+   **Risks**; **Deferred**
    (deferred questions, with what would reopen them); **Open threads** (discussion points
-   that ended without a decision). Do not compress: a reader with no access to the session
-   must be able to build from it.
+   that ended without a decision). Importance levels stay out of the doc. Do not compress: a
+   reader with no access to the session must be able to build from it.
 2. Patch `"finished": { "doc": … }` and `"agent": { "status": "waiting" }`
    (after a page Finish this is the send's one patch, with `handled`); the page shows the
    finished banner and locks staging.
@@ -442,9 +476,11 @@ What each field means. You write it only through `patch`.
     "thread": [{ "who": "user|agent", "text": "…", "at": "ISO" }]
   },
   "terms": [{ "term": "…", "def": "…", "avoid": ["…"] }],
+  "axes": [{ "key": "ux", "name": "User experience" }, …],     // optional; absent = ux, correct, risk, cost
   "questions": [{
     "id": "q7", "round": 4, "deps": ["q2"], "title": "…", "body": "…",
-    "options": [{ "k": "A", "text": "…" }],
+    "level": "skim|check|careful|yours", "levelReason": "high stakes, close call",  // levelReason required with level
+    "options": [{ "k": "A", "text": "…", "ratings": { "ux": "good|mixed|poor|na", … } }],  // keys from axes; none on "yours"
     "multi": false,                                             // true: any number of options may be picked
     "rec": { "option": "A", "why": "…" },                       // or { "text": "…", "why": "…" }; multi: { "options": ["A","C"], "why": "…" }
     "status": "open|answered|deferred|reopened", "durable": false, "updated": false,
