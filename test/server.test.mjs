@@ -693,6 +693,30 @@ test("patch: axes replace the default set; ratings must use the grill's axis key
   assert.ok(!("axes" in stateOf(fresh)), "axes: null goes back to the default four");
 });
 
+test("patch: axes keep their names, keys and order while ratings remain", () => {
+  const defaults = [{ key: "ux", name: "User experience" }, { key: "correct", name: "Technical correctness" }, { key: "risk", name: "Risk" }, { key: "cost", name: "Cost" }];
+  const session = seeded({ questions: [qn("q1", 1, { options: ratedOpts() })] });
+  const stable = /axes cannot change while ratings remain/;
+  rejected(session, { axes: defaults.map((a) => ({ ...a, name: `New ${a.name}` })) }, stable);
+  rejected(session, { axes: [...defaults, { key: "reach", name: "Reach" }] }, stable);
+  rejected(session, { axes: defaults.toReversed() }, stable);
+  applied(session, { axes: defaults.map(({ key, name }) => ({ name, key })) });
+  applied(session, { axes: null });
+  assert.ok(!("axes" in stateOf(session)));
+
+  const axes = [{ key: "ux", name: "Ease of use" }, { key: "reach", name: "Reach" }];
+  const custom = seeded({ questions: [] });
+  applied(custom, { axes, questions: [qn("q1", 1, { options: [{ k: "A", text: "Alpha", ratings: { ux: "good" } }] })] });
+  rejected(custom, { axes: axes.map((a) => ({ ...a, name: `New ${a.name}` })) }, stable);
+  rejected(custom, { axes: [...axes, { key: "cost", name: "Cost" }] }, stable);
+  rejected(custom, { axes: axes.slice(0, 1) }, stable);
+  rejected(custom, { axes: null }, stable);
+  rejected(custom, { axes: defaults, questions: [{ id: "q1", options: ratedOpts() }] }, stable);
+  applied(custom, { axes: axes.map(({ key, name }) => ({ name, key })) });
+  applied(custom, { axes: null, questions: [{ id: "q1", options: [{ k: "A", text: "Alpha" }] }] });
+  assert.ok(!("axes" in stateOf(custom)));
+});
+
 test("patch: a stdin that cannot be read exits non-zero with one stderr line and leaves state.json untouched", () => {
   const session = seeded({ questions: [qn("q1", 1)] });
   const before = rawState(session);

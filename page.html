@@ -19,6 +19,7 @@
     --accent-soft: light-dark(#fbefeb, #2c2720); --accent-line: light-dark(#e7c9c0, #4a4238);
     --careful: light-dark(#9a3a26, #e0785c); --careful-soft: light-dark(#fbefeb, #38211b); --careful-line: light-dark(#e7c9c0, #5a2e24); --stage-line: light-dark(#ecd6ae, #4a3a1c);
     --taste: light-dark(#5d4a86, #b4a2e0); --taste-soft: light-dark(#f1edf7, #251f33); --taste-line: light-dark(#d6cde6, #3d3352);
+    --check-ink: light-dark(#7f5413, #e0b45a); --skim-ink: light-dark(#625b51, #b3aa9c);
     --chip-g-bg: light-dark(#e3eee5, #1f2b22); --chip-g-ink: light-dark(#2f5a3b, #8fc29d); --chip-g-line: light-dark(#c7dccb, #2f4a36);
     --chip-x-bg: light-dark(#f8ecd2, #2e2616); --chip-x-ink: light-dark(#7f5413, #e0b45a); --chip-x-line: light-dark(#ead3a2, #4a3a1c);
     --chip-p-bg: light-dark(#fbe4dd, #38211b); --chip-p-ink: light-dark(#9a3a26, #ec8b72); --chip-p-line: light-dark(#f0c7bb, #5a2e24);
@@ -124,8 +125,8 @@
   .imp b { font-weight: 600; letter-spacing: .06em; text-transform: uppercase; font-size: 11px; }
   .imp .why-l { color: var(--ink-2); }
   .imp.careful { color: var(--careful); border-color: var(--careful-line); background: var(--careful-soft); }
-  .imp.check { color: var(--stage); border-color: var(--stage-line); background: var(--stage-soft); }
-  .imp.skim { color: var(--ink-3); border-color: var(--rule); background: var(--bg); }
+  .imp.check { color: var(--check-ink); border-color: var(--stage-line); background: var(--stage-soft); }
+  .imp.skim { color: var(--skim-ink); border-color: var(--rule); background: var(--bg); }
   .imp.yours { color: var(--taste); border-color: var(--taste-line); background: var(--taste-soft); }
   .title-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 8px 0 12px; }
   .card h2 { font-family: var(--serif); font-weight: 500; font-size: 30px; line-height: 1.15; margin: 0; }
@@ -327,8 +328,11 @@ const qs = () => (S && Array.isArray(S.questions) ? S.questions : []);
 const byId = (id) => qs().find((q) => q.id === id);
 const isOpen = (q) => q.status === "open" || q.status === "reopened";
 const curRound = () => qs().reduce((m, q) => Math.max(m, Number(q.round) || 0), 0);
-const rounds = () => { const m = new Map(); for (const q of qs()) { const r = Number(q.round) || 0; if (!m.has(r)) m.set(r, []); m.get(r).push(q); } return [...m.entries()].sort((a, b) => a[0] - b[0]); };
-const firstOpen = () => byLevel(qs().filter((q) => isOpen(q) && Number(q.round) === curRound()))[0] || qs().find(isOpen) || qs()[qs().length - 1] || null;
+const rounds = () => { const m = new Map(); for (const q of qs()) { const r = Number(q.round) || 0; if (!m.has(r)) m.set(r, []); m.get(r).push(q); } return [...m.entries()].sort((a, b) => a[0] - b[0]).map(([r, list]) => [r, byLevel(list)]); };
+const firstOpen = () => {
+  const all = rounds();
+  return all.find(([r]) => r === curRound())?.[1].find(isOpen) || all.flatMap(([, list]) => list).find(isOpen) || qs()[qs().length - 1] || null;
+};
 // Importance levels: how much attention a question deserves. Within a round the list sorts where
 // your judgment matters first; a question with no level sorts with Check, and a round with no
 // levels at all keeps its order, so an older session looks exactly as it did.
@@ -606,8 +610,7 @@ function renderNav() {
   const all = rounds();
   if (!all.length) { nav.insertAdjacentHTML("beforeend", `<div class="empty">Waiting for the first round…</div>`); return; }
   const cur = curRound();
-  for (const [r, inRound] of all) {
-    const list = byLevel(inRound);
+  for (const [r, list] of all) {
     const h = document.createElement("div"); h.className = "round" + (r === cur ? " current" : "");
     h.innerHTML = `<span>Round ${r}${r === cur ? " · current" : ""}</span><span>${list.length}</span>`; nav.appendChild(h);
     for (const q of list) {
