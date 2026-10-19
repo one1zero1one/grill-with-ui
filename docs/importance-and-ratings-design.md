@@ -45,10 +45,10 @@ question." And: "It would also be nice to rate each recommendation on a few diff
 user experience, technical correctness, … That way, you can see at a glance what the
 trade-offs are and how good a recommendation is."
 
-Today every question looks equally weighty in the sidebar and on the card. The only related
-signal is a small grey "durable" word in the card's top line. A recommendation's quality shows
-only in its prose `why`, and the comparison with the other options only appears when you click
-Explore deeper.
+Before this change, every question looked equally weighty in the sidebar and on the card.
+The only related signal was a small grey "durable" word in the card's top line. A
+recommendation's quality showed only in its prose `why`, and the comparison with the other
+options only appeared when clicking Explore deeper.
 
 ## Locked decisions
 
@@ -276,9 +276,9 @@ every axis; it costs nothing here") rather than inventing a weakness.
 These were established by exploring the repo and GitHub, not by asking. Everything was checked
 on 2026-10-18.
 
-### The current page
+### The page before this change
 
-- `durable` shows today only as a small grey word in the card's top line.
+- `durable` showed only as a small grey word in the card's top line.
 - Picking the recommended option counts as "accept".
 - Explore deeper produces a pros/cons table per option.
 - The left sidebar groups questions by round; each row shows the id, the title, and the status
@@ -406,40 +406,14 @@ No question was deferred. Items left out of the next version, and what would bri
   agent.handled from state.json. One related trap I did find: text typed in the discussion box
   but not added is dropped when you press Send. The next version fixes that."
 
-## Build notes (proposals, not decided in the grill)
+## Implementation references
 
-A suggested shape for the builder; adjust freely.
+The implemented state fields, patch constraints, and authoring rules live in
+[SKILL.md](../SKILL.md#statejson), with validation in `server.mjs` (`validateState` and
+`validateAxesChange`). See [README Use](../README.md#use) for the shipped page behavior,
+including compatibility with older sessions. These replace the provisional build notes.
 
-- **Grill-level field in `state.json`:** `axes`, an ordered list of `{ key, name }`. Default:
-  `[{ux,"User experience"},{correct,"Technical correctness"},{risk,"Risk"},{cost,"Cost"}]`.
-  Old sessions without it get the default.
-- **Per-question fields:**
-  - `level`: one of `"skim" | "check" | "careful" | "yours"`.
-  - `levelReason`: a short string, e.g. "high stakes, close call".
-  - Both are optional for old sessions. A question without a level renders as today: no pill,
-    sorted by id.
-- **Per-option field:** `ratings`, an object from axis key to `"good" | "mixed" | "poor" | "na"`.
-  It is omitted on Your-call questions.
-- **`patch` validation:** reject an unknown level, an unknown axis key, or a rating value
-  outside the set. Ratings on a `yours` question are an error, or are dropped.
-- **SKILL.md additions:**
-  - the level rubric (the four rows in Locked decision 2);
-  - the consistency rule and its escape (Locked decision 4);
-  - "rate every option on the grill's axes";
-  - when to replace the axis set;
-  - block markdown does not render;
-  - `--open` on Start;
-  - the new Finish doc format (ratings tables in Locked decisions).
-- **page.html changes:**
-  - the level pill on the card;
-  - "My lean" on `yours`;
-  - the chip row under each option (`title="<axis>: <rating>"`);
-  - sidebar sort and words;
-  - the Levels popover;
-  - the `--careful*` and chip variables;
-  - the dark `--accent` change;
-  - remove the grey "durable" word from the card.
-- **Tests:**
-  - patch validation for the new fields;
-  - page e2e for chips, the sidebar sort and words (only on careful / yours), the Your-call
-    card, dark-mode variables present, and old-session rendering unchanged.
+The prototype's weakest-axis phrase highlighting is not shipped: it would pattern-match
+agent prose, and #26 changes the rendering of that prose. The block-markdown guidance and
+Start-only `--open` instructions await #26 and #25 respectively. This importance-and-ratings
+PR is held until those contributor PRs merge and it is rebased onto them.

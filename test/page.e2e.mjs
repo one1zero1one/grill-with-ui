@@ -73,6 +73,15 @@ let s, cr, multiEv = { seq: 0 };
 try {
   await page.goto(url);
   await page.locator(".item").first().waitFor();
+  // An old session (no axes, no levels, no ratings) renders as it always did.
+  check("old session: no level pill, no rating chips, no sidebar level words, no Levels button", await page.locator(".imp").count() === 0
+    && await page.locator(".chips").count() === 0 && await page.locator(".sword").count() === 0 && await page.locator("#levels-toggle").count() === 1 && await page.locator("#levels-toggle").isHidden());
+  check("old session: the sidebar keeps the question order", JSON.stringify(await page.locator("nav .item .id").allTextContents()) === '["Q1","Q2","Q3","Q4"]');
+  check("old session: the recommended option still says Recommended", (await page.locator(".opt.rec .tag").textContent()) === "Recommended" && (await page.locator(".why b").textContent()) === "Why B.");
+  await capture("levels-legacy.png");
+  await page.locator('.item[data-q="q1"]').click();
+  check("old session: durable stays out of the card", !(await page.locator(".crumb").textContent()).includes("durable"));
+  await page.locator('.item[data-q="q3"]').click();
   if (!process.argv.includes("--importance-only")) {
   check("default selection = first open question in the current round", (await page.locator(".item.selected .id").textContent()) === "Q3");
   check("updated marker on q3", await page.locator(".item.updated .id", { hasText: "Q3" }).count() === 1);
@@ -81,11 +90,6 @@ try {
   check("no Accept button (clicking the recommended option is the accept)", await page.locator("#accept").count() === 0);
   check("explore button sits next to the title", await page.locator(".title-row #explore").count() === 1 && (await page.locator("#explore").textContent()) === "Explore deeper");
   check("system fonts only (no Google Fonts link)", (await page.content()).includes("fonts.googleapis") === false);
-  // An old session (no axes, no levels, no ratings) renders as it always did.
-  check("old session: no level pill, no rating chips, no sidebar level words, no Levels button", await page.locator(".imp").count() === 0
-    && await page.locator(".chips").count() === 0 && await page.locator(".sword").count() === 0 && await page.locator("#levels-toggle").count() === 1 && await page.locator("#levels-toggle").isHidden());
-  check("old session: the sidebar keeps the question order", JSON.stringify(await page.locator("nav .item .id").allTextContents()) === '["Q1","Q2","Q3","Q4"]');
-  check("old session: the recommended option still says Recommended", (await page.locator(".opt.rec .tag").textContent()) === "Recommended" && (await page.locator(".why b").textContent()) === "Why B.");
   const geo = await page.evaluate(() => { const r = (sel) => document.querySelector(sel).getBoundingClientRect(); return { main: r("main"), footer: r("footer"), h: innerHeight }; });
   check("layout fills the viewport (content row stretches, footer sits at the bottom)", Math.abs(geo.footer.bottom - geo.h) < 2 && Math.abs(geo.main.bottom - geo.footer.top) < 2 && geo.main.height > 600, JSON.stringify(geo));
   check("no intent line when the session has none", await page.locator("#intent.show").count() === 0);
@@ -516,6 +520,7 @@ try {
   const lvText = await page.locator("#levels").textContent();
   check("levels: the Levels popover explains all four levels", await page.locator("#levels").isVisible() && await page.locator("#levels .lv-row").count() === 4
     && ["Decide carefully", "Your call", "Check", "Skim"].every((w) => lvText.includes(w)), lvText);
+  await capture("levels-popover.png");
   await page.locator("h1").click();
   check("levels: a click elsewhere closes the popover", !(await page.locator("#levels").isVisible()));
 
@@ -586,6 +591,55 @@ try {
     await page.emulateMedia({ colorScheme: "light" });
   }
 
+  // Complete the real user path: chips and My lean → Send → agent patch → reload.
+  // The earlier defensive-render fixture intentionally has ratings on Your call;
+  // remove those through patch before exercising the valid agent workflow.
+  const taste = s.questions.find((q) => q.id === "q10");
+  const patchState = (patch) => execFileSync(process.execPath, [SERVER, "patch", "--session", session], {
+    env, encoding: "utf8", input: JSON.stringify(patch),
+  });
+  patchState({ questions: [{ id: taste.id, options: taste.options.map(({ ratings, ...option }) => option) }] });
+  await page.locator('.item[data-q="q9"]').click();
+  await page.locator('.opt.rec .chip').first().click();
+  await page.locator('.item[data-q="q10"]').click();
+  await page.locator('.opt.lean').click();
+  await page.locator('.item[data-q="q12"]').click();
+  await page.locator('.opt[data-opt="A"] .chip').first().click();
+  await page.locator('.opt[data-opt="C"] .chip').first().click();
+  check("ratings send: single, lean and multi answers are staged together", (await page.locator("#send").textContent()) === "Send 3 to Agent");
+  await capture("levels-multi-staged.png");
+  await page.reload();
+  await page.locator('.item[data-q="q12"]').click();
+  await page.locator('.opt.staged').first().waitFor();
+  check("ratings send: all choices survive reload before sending", (await page.locator("#send").textContent()) === "Send 3 to Agent" && await page.locator('.opt.staged').count() === 2);
+  const sentResponse = page.waitForResponse((r) => r.url().endsWith("/send") && r.request().method() === "POST");
+  await page.locator("#send").click();
+  const receipt = await (await sentResponse).json();
+  const sent = JSON.parse(readFileSync(join(session, "events.jsonl"), "utf8").trim().split("\n").at(-1));
+  assert.equal(receipt.ok, true);
+  assert.equal(receipt.seq, sent.seq);
+  assert.deepEqual(sent.actions, [
+    { q: "q9", type: "answer", kind: "accept", option: "B" },
+    { q: "q10", type: "answer", kind: "accept", option: "B" },
+    { q: "q12", type: "answer", kind: "accept", options: ["A", "C"] },
+  ]);
+  check("ratings send: the server persists exact single, lean and multi accept actions", true);
+  patchState({ agent: { status: "waiting", handled: sent.seq }, questions: sent.actions.map(({ q, type, ...answer }) => ({ id: q, status: "answered", answer })) });
+  await page.waitForFunction(() => document.querySelector('.item[data-q="q12"] .mark.answered'));
+  await page.reload();
+  await page.locator('.item[data-q="q12"]').click();
+  await page.locator('.opt.chosen').first().waitFor();
+  check("ratings send: acknowledged multi choices survive reload with their chips", await page.locator('.opt.chosen').count() === 2 && await page.locator('.opt.chosen .chips').count() === 2);
+  await capture("levels-multi-answered.png");
+  await page.locator('.item[data-q="q10"]').click();
+  check("ratings send: acknowledged lean survives reload without chips", await page.locator('.opt.chosen.lean').count() === 1 && await page.locator('.chips').count() === 0);
+  await capture("levels-yours-answered.png");
+  if (evidence) {
+    writeFileSync(join(evidence, "levels-send-event.json"), JSON.stringify(sent, null, 2));
+    writeFileSync(join(evidence, "levels-acknowledged-state.json"), readFileSync(stateFile));
+  }
+  s.agent.handled = sent.seq;
+
   // a grill that replaced the default axes shows its own axis names
   s.axes = [{ key: "reach", name: "Reach" }, { key: "spend", name: "Ad spend" }];
   s.questions.push(lq("q13", { round: 5, level: "careful", levelReason: "high stakes, close call",
@@ -596,6 +650,8 @@ try {
   check("levels: an answered row's level word fades with the rest of the settled work", Number(await page.locator('.item[data-q="q9"] .sword').evaluate((el) => getComputedStyle(el).opacity)) < 0.6
     && (await page.locator('.item[data-q="q10"] .sword').evaluate((el) => getComputedStyle(el).opacity)) === "1");
   check("axes: a replaced axis set shows its own names; a key outside the set is ignored", JSON.stringify(await chipsOf("A").allTextContents()) === '["Reach","Ad spend"]' && (await chipsOf("B").nth(1).getAttribute("title")) === "Ad spend: poor");
+
+  await capture("levels-custom-axes.png");
 
   const selectionCase = async (name, questions, expected) => {
     writeState({ ...fixture(), questions });

@@ -156,29 +156,10 @@ keeps one Claude session behind it so nothing is ever out of context.
 - Repo-wide `CONTEXT.md` / `docs/adr/` output as an opt-in flag.
 - The Codex-side skill prompt (wait mode is built; the prompt is not).
 
-## State sketch (for the spike)
+## State and event reference
 
-```jsonc
-// state.json — agent-owned
-{
-  "topic": "…", "doc": "docs/x-design.md", "created": "2026-09-06T22:00:00Z",
-  "agent": { "status": "waiting|working", "since": "…" },
-  "terms": [{ "term": "…", "def": "…", "avoid": ["…"] }],
-  "questions": [{
-    "id": "q7", "round": 4, "deps": ["q2"], "title": "…", "body": "…",
-    "options": [{ "k": "A", "text": "…" }], "rec": { "option": "A", "why": "…" },
-    "status": "open|answered|deferred|reopened", "durable": false, "updated": false,
-    "answer": { "kind": "accept|option|text", "option": "A", "text": "…" },
-    "thread": [{ "who": "user|agent", "text": "…", "at": "…" }]
-  }]
-}
-// events.jsonl — app-appended, one line per Send
-{ "seq": 12, "at": "…", "actions": [
-  { "q": "q15", "type": "answer", "kind": "option", "option": "A" },
-  { "q": "q8",  "type": "thread", "text": "…" },
-  { "q": "q17", "type": "defer" }
-]}
-```
+The current [state and event schema](../SKILL.md#statejson) in `SKILL.md` supersedes the
+spike's state sketch.
 
 ## Next
 

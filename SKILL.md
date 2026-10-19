@@ -399,8 +399,9 @@ On a `finish` action, or when the user says finish in the terminal:
    Avoid list); **Why** (the problem in the user's words); **Locked decisions** (every
    `durable` question: the decision, a ratings table with options as rows and axes as
    columns, the decision in bold and every rating as a word (good / mixed / poor, a dash for
-   `na`), then the rejected options and why each lost, and what the decision gives up on its
-   weakest axis); **Routine choices** (every other answered question, one bullet each);
+   `na` or an unrated axis; never invent ratings), then the rejected options and why each
+   lost, applying the consistency rule and its escape from Interview method);
+   **Routine choices** (every other answered question, one bullet each);
    **Verified facts** (anything you established by exploring rather than asking, if any);
    **Risks**; **Deferred**
    (deferred questions, with what would reopen them); **Open threads** (discussion points
@@ -460,6 +461,17 @@ visual are saved, stop the server using the verified `pid` in `<session>/server.
 ## state.json
 
 What each field means. You write it only through `patch`.
+
+`axes`, `level`, `levelReason`, and option `ratings` are optional in stored state for
+compatibility; `new` does not write them. Follow Interview method when authoring questions.
+When supplied, `axes` must be a non-empty array with non-blank string keys and names and
+unique keys. When absent from state, it uses the default axes defined in Interview method;
+`axes: null` removes an explicit set. The validator rejects changes to axis keys, names, or order while
+non-empty ratings exist both before and after the patch, even if the ratings are rewritten.
+A supplied `levelReason` must be a string, and every supplied `level` requires a non-blank
+reason. `ratings` must be an object using only the grill's axis keys and the values shown
+below. For the Your-call rule, see Interview method; when changing a rated question to
+`yours`, replace its `options` without ratings in the same patch.
 
 ```jsonc
 {
