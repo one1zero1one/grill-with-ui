@@ -481,6 +481,9 @@ try {
   multiEv = JSON.parse(await srv.nth(2));
   const a5 = multiEv.actions.find((a) => a.q === "q5"), a6 = multiEv.actions.find((a) => a.q === "q6");
   check("multi: send carries the option sets", a5 && a5.kind === "accept" && JSON.stringify(a5.options) === '["A","C"]' && a6 && a6.kind === "option" && JSON.stringify(a6.options) === '["A","B","C"]', JSON.stringify(multiEv.actions));
+  // The server logs the event before the browser processes the response and saves
+  // cleared staging. Wait for that commit before the next fixture reloads the page.
+  await page.waitForFunction(() => document.getElementById("send").textContent === "Send to Agent");
 
   }
 
