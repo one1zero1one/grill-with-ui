@@ -6,9 +6,7 @@
 //                                                   line to stdout (this process is the agent's Monitor command).
 //                                                   Without --port it retries the port it used last time, then falls
 //                                                   back to an ephemeral one, so an open tab survives a restart.
-//                                                   --detach (wait mode): run the same server in the background on any
-//                                                   OS, output to serve.log; print its ready line once it answers and
-//                                                   exit 0. A server already running for the session is reported, not doubled.
+//                                                   For --detach startup and reuse, see SKILL.md (Wait mode).
 //   sessions [--all]                                list this project's sessions (newest first; --all adds finished ones)
 //   pending  --session DIR                          print every Send past agent.handled (replay on resume)
 //   wait     --session DIR [--after N] [--timeout S] block until a Send newer than seq N lands, print it, exit 0
@@ -17,12 +15,7 @@
 //   patch    --session DIR [--file P]               apply a JSON patch (stdin, or the file P) to state.json: merge,
 //                                                   validate, write atomically, print one short summary line
 //
-// Files (per session folder): state.json  — written only by the agent, through `patch`
-//                             events.jsonl — appended only by this server, one line per Send
-//                             server.json  — url, port, pid of the running server
-//                             listener.json — heartbeat a running `wait` writes, so the page can tell a listener
-//                             serve.log    — output of a `serve --detach` server
-// Files (global, under GRILL_HOME): ui.json — UI prefs shared by every grill (theme)
+// Session and global file inventory: README.md (Files).
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";

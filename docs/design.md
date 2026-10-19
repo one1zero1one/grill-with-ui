@@ -91,10 +91,8 @@ keeps one Claude session behind it so nothing is ever out of context.
   grilling, matching Q3) plus the page protocol. `grilling` and `grill-me` stay untouched as
   the terminal fallback. Developed in its own repo (`~/Projects/grill-with-ui`), symlinked
   into `~/.claude/skills/`, publishable later via skills.sh and as a Claude Code plugin.
-- **Wait mode in v1** (Q13): the server also accepts a blocking `wait` command that runs
-  in the foreground until the next Send (or a timeout), prints it, and exits. This is the
-  path for agents without Monitor (Codex; Claude Code on Bedrock/Vertex or with telemetry
-  off). The Codex skill prompt itself is not in v1.
+- **Wait mode in v1** (Q13): agents without a persistent Monitor use the
+  [wait-mode protocol](../SKILL.md#wait-mode-agents-without-a-monitor-tool).
 - **Fonts: system stack only** (spike grill Q1, 2026-09-06). A serif stack for headings
   (Iowan Old Style, Charter, Georgia) and the platform sans for body. No network, no binary
   font files in the skill. Bundling woff2 is the answer only if the exact typeface becomes
@@ -154,7 +152,6 @@ keeps one Claude session behind it so nothing is ever out of context.
 
 - Keyboard shortcuts on the page.
 - Repo-wide `CONTEXT.md` / `docs/adr/` output as an opt-in flag.
-- The Codex-side skill prompt (wait mode is built; the prompt is not).
 
 ## State sketch (for the spike)
 

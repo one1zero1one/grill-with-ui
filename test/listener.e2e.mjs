@@ -50,13 +50,29 @@ try {
   await page.locator("#send").click();
   await page.waitForFunction(() => document.getElementById("staged-list").textContent.includes("Sent #1"));
   assert.match(await page.locator("#staged-list").textContent(), /Sent #1 · queued until an agent listens/);
+  if (evidence) await page.screenshot({ path: join(evidence, "listener-queued.png") });
+
+  // Resume from the agent's last handled send: the saved browser action is replayed by wait.
+  const saved = JSON.parse(readFileSync(join(session, "events.jsonl"), "utf8").trim());
+  const replay = JSON.parse(cli(["wait", "--session", session, "--after", "0", "--timeout", "5"]));
+  assert.deepEqual(replay, saved, "resuming wait receives the exact queued browser send");
+  assert.equal(replay.seq, 1);
+  assert.equal(replay.actions[0].option, "B");
+  if (evidence) writeFileSync(join(evidence, "listener-replay.json"), JSON.stringify({ ready, saved, replay }, null, 2) + "\n");
 
   // An agent starts listening: a running wait clears the indicator.
+  goQuiet();
+  await unheard();
   waiter = spawn(process.execPath, [server, "wait", "--session", session, "--after", "1", "--timeout", "30"], { env, stdio: ["ignore", "pipe", "inherit"] });
   await heard();
   assert.match(await status(), /Agent waiting for you/);
   assert.match(await page.locator("#staged-list").textContent(), /Sent #1 · waiting for the agent/);
   if (evidence) await page.screenshot({ path: join(evidence, "listener-back.png") });
+  const heartbeat = () => JSON.parse(readFileSync(join(session, "listener.json"), "utf8"));
+  const firstBeat = heartbeat();
+  assert.equal(firstBeat.pid, waiter.pid);
+  await page.waitForTimeout(2500);
+  assert.ok(Date.parse(heartbeat().at) > Date.parse(firstBeat.at), "a blocked wait keeps renewing its heartbeat");
 
   // While the agent works on a send it is not in `wait`, and that is expected: no indicator.
   await new Promise((resolve) => { waiter.once("exit", resolve); waiter.kill(); });
@@ -70,8 +86,20 @@ try {
   patch({ agent: { status: "waiting", handled: 1 } });
   goQuiet();
   await unheard();
+
+  // An unavailable listener endpoint is unknown, not evidence that the agent is absent.
+  await page.route("**/listener", (route) => route.fulfill({ status: 503, body: "unavailable" }));
+  await heard();
+  await page.unroute("**/listener");
+  await unheard();
+
+  // A completed session has no need for a listener, even when its heartbeat is stale.
+  patch({ finished: { doc: "docs/listener-design.md" } });
+  goQuiet();
+  await page.waitForFunction(() => document.getElementById("staged-list").textContent.includes("This grill is finished."));
+  assert.doesNotMatch(await status(), /No agent is listening/);
   assert.deepEqual(errors, []);
-  console.log("listener e2e: passed (none → shown, queued send, wait clears it, working not flagged, stale shows again)");
+  console.log("listener e2e: passed (none → shown, queued send replayed, wait clears it, working not flagged, stale shows again, unknown and finished not flagged)");
 } finally {
   try {
     if (waiter && waiter.exitCode === null) waiter.kill();

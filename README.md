@@ -59,13 +59,9 @@ description names the phrase "grill with ui", so plain language works on every a
 What the agent needs at run time:
 
 - **A shell tool and Node 20+.** Claude Code is woken per Send by its persistent Monitor
-  tool. Every other agent uses **wait mode**, spelled out in `SKILL.md`: it starts the
-  server with `serve --detach` (it backgrounds itself on macOS, Linux and Windows; or in a
-  harness-managed shell session) and keeps `node server.mjs wait` active in the foreground.
-  It returns on the next Send or after a bounded timeout, then loops. The agent keeps
-  listening after replies and completed visuals, until the user finishes or explicitly
-  pauses; a running server is not a substitute for that listener. When no agent has listened
-  for 30 seconds, the page says so: sends still save, and queue until an agent resumes.
+  tool. Agents without one use **wait mode**: `serve --detach` starts the page server,
+  and a foreground `wait` loop receives sends. Follow [Wait mode](SKILL.md#wait-mode-agents-without-a-monitor-tool)
+  for startup, harness fallback, and turn-boundary requirements.
 - **Optionally a subagent tool**, for Visualize. See [Use](#use) for the drawing modes;
   without a subagent tool, the agent draws inline.
 
@@ -129,6 +125,12 @@ To pick up an unfinished grill, in the same project:
 If the agent crashed or was closed, sends you made in the meantime are replayed on resume,
 and the page tab you still have open reconnects on its own.
 
+An unfinished, reachable page shows **No agent is listening · sends will queue until it
+resumes** with a hollow amber dot when listener information confirms inactivity and the
+agent is not marked as working. A send then reads **Sent #N · queued until an agent listens**.
+The warning is hidden when listener information is unavailable; its absence alone does not
+guarantee that an agent is listening.
+
 ## Files
 
 Session state lives outside your repo, so there is nothing to gitignore:
@@ -140,6 +142,8 @@ Session state lives outside your repo, so there is nothing to gitignore:
     state.json     written only by the agent, through `patch` (questions, recommendations, threads, status)
     events.jsonl   appended only by the page, one line per Send
     server.json    url, port and pid of the running server
+    listener.json  heartbeat written by a running `wait`
+    serve.log      server output from `serve --detach`
     visual.html    the prototype or diagram, served at /visual
 ```
 
@@ -185,4 +189,5 @@ throwaway session and drives the page end to end (staging, reload, send, working
 server restart, finished state).
 The focused toggle check covers both drawing modes, the choice at Send time, and per-grill
 persistence. The listener check starts a `serve --detach` server and a real `wait`, and
-covers the page's "No agent is listening" status appearing, clearing, and returning. Set `GRILL_EVIDENCE_DIR` to save screenshots and sent events from either check.
+covers the page's "No agent is listening" status appearing, clearing, and returning.
+Set `GRILL_EVIDENCE_DIR` to save screenshots and send evidence from these checks.
