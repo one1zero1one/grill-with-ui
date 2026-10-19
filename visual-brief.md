@@ -33,9 +33,9 @@ The questions are the source of truth; the visual is derived from them.
 ## The file
 
 `<session>/visual.html`, **one self-contained file**: inline CSS and JS, system fonts, no
-network requests, no external assets. The page shows it in an iframe with
-`sandbox="allow-scripts"` and no same-origin access, so a fetch, a CDN font, or an image
-URL fails silently. Before you finish, run `grep -n '://' <session>/visual.html`; the only
+network requests, no external assets except the Mermaid option below. These are artifact
+requirements; see [Server commands](README.md#server-commands) for the sandbox's security
+guarantees. Before you finish, run `grep -n '://' <session>/visual.html`; the only
 allowed hit is the Mermaid script tag described below.
 
 Start the file with an HTML comment: the topic, the questions it reflects (id and one
@@ -53,7 +53,7 @@ controls; the clicks, toggles, and states the design has; plausible fake data fo
   changed parts are drawn as designed, so the two can be judged together. A screenshot-like
   fidelity is the goal: someone who uses the app should not be able to tell from the frame
   that it is a prototype. If the app loads a web font, use its nearest system fallback and
-  say so in the header comment (the frame has no network).
+  say so in the header comment so the prototype stays usable offline.
 - **A new UI** with nothing to match: the fidelity of a good wireframe. Neutral palette,
   clear hierarchy, no decoration the design did not decide.
 

@@ -94,9 +94,9 @@ finished. He requested that visualization stop auto-regenerating each turn.
   drawing guesses unmarked (a finished-looking picture gets treated as decided).
 - **Where the file lives and how it reaches the page** (stated as routine engineering in
   Q6's body): `<session>/visual.html`, written only by the agent, served by the session
-  server at `/visual`, shown in an iframe with `sandbox="allow-scripts"` and no same-origin
-  (a prototype cannot read the page's storage or post to `/send`). The page reloads the
-  iframe when `visual.version` changes.
+  server at `/visual`, shown in an iframe. See
+  [Server commands](../README.md#server-commands) for the sandbox's security guarantees.
+  The page reloads the iframe when `visual.version` changes.
 
 - **Who draws the file**: see [Subagent or inline](../SKILL.md#subagent-or-inline) for
   mode selection and execution. The user-facing toggle is described in [Use](../README.md#use).
@@ -122,9 +122,9 @@ finished. He requested that visualization stop auto-regenerating each turn.
 - **Regeneration cost and delayed acknowledgement.** Redraws can take longer than an
   interview response. Mitigation: explicit redraws, an Out of date indicator between
   draws, and publishing the next round with its send acknowledgement in one update.
-- **Sandbox surprises.** The iframe has no network and no same-origin access, so a
-  prototype that tries to fetch anything fails silently. Intended; the agent's guidance
-  says so.
+- **Sandbox surprises.** Keep visuals self-contained under the
+  [visual brief's artifact rules](../visual-brief.md#the-file); the server's isolation
+  guarantees are documented in [Server commands](../README.md#server-commands).
 
 ## Deferred
 
