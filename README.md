@@ -60,10 +60,12 @@ What the agent needs at run time:
 
 - **A shell tool and Node 20+.** Claude Code is woken per Send by its persistent Monitor
   tool. Every other agent uses **wait mode**, spelled out in `SKILL.md`: it starts the
-  server detached (or in a harness-managed shell session) and keeps `node server.mjs wait`
-  active in the foreground. It returns on the next Send or after a bounded timeout, then
-  loops. The agent keeps listening after replies and completed visuals, until the user
-  finishes or explicitly pauses; a running server is not a substitute for that listener.
+  server with `serve --detach` (it backgrounds itself on macOS, Linux and Windows; or in a
+  harness-managed shell session) and keeps `node server.mjs wait` active in the foreground.
+  It returns on the next Send or after a bounded timeout, then loops. The agent keeps
+  listening after replies and completed visuals, until the user finishes or explicitly
+  pauses; a running server is not a substitute for that listener. When no agent has listened
+  for 30 seconds, the page says so: sends still save, and queue until an agent resumes.
 - **Optionally a subagent tool**, for Visualize. See [Use](#use) for the drawing modes;
   without a subagent tool, the agent draws inline.
 
@@ -153,7 +155,8 @@ Playwright and `ffmpeg`.
 
 ```
 node server.mjs new      --topic T [--doc P]                  create a session, print its folder
-node server.mjs serve    --session DIR [--port N]             serve the page; print one line per Send
+node server.mjs serve    --session DIR [--port N] [--detach]  serve the page; print one line per Send
+                                                               (--detach: in the background, output in serve.log)
 node server.mjs sessions [--all]                               list this project's sessions
 node server.mjs pending  --session DIR                         print sends past agent.handled
 node server.mjs wait     --session DIR [--after N] [--timeout S]  block until the next send (exit 3 on timeout)
@@ -173,6 +176,7 @@ state.
 node --test test/server.test.mjs
 PLAYWRIGHT_PKG=/path/to/node_modules/@playwright/test/index.mjs node test/page.e2e.mjs
 PLAYWRIGHT_PKG=/path/to/node_modules/@playwright/test/index.mjs node test/subagent-toggle.e2e.mjs
+PLAYWRIGHT_PKG=/path/to/node_modules/@playwright/test/index.mjs node test/listener.e2e.mjs
 ```
 
 The page check needs Playwright with Chromium; point `PLAYWRIGHT_PKG` at an existing install
@@ -180,4 +184,5 @@ or run it with `@playwright/test` installed next to the repo. It starts a real s
 throwaway session and drives the page end to end (staging, reload, send, working state,
 server restart, finished state).
 The focused toggle check covers both drawing modes, the choice at Send time, and per-grill
-persistence. Set `GRILL_EVIDENCE_DIR` to save screenshots and sent events from either check.
+persistence. The listener check starts a `serve --detach` server and a real `wait`, and
+covers the page's "No agent is listening" status appearing, clearing, and returning. Set `GRILL_EVIDENCE_DIR` to save screenshots and sent events from either check.

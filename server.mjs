@@ -2,10 +2,13 @@
 // grill-with-ui server. Plain Node, no dependencies, no build step.
 //
 //   new      --topic T [--intent I] [--doc P]         create a session folder under GRILL_HOME, print {session,key,project,id,doc,intent}
-//   serve    --session DIR [--port N]               serve the page; append each Send to events.jsonl AND print the same
+//   serve    --session DIR [--port N] [--detach]    serve the page; append each Send to events.jsonl AND print the same
 //                                                   line to stdout (this process is the agent's Monitor command).
 //                                                   Without --port it retries the port it used last time, then falls
 //                                                   back to an ephemeral one, so an open tab survives a restart.
+//                                                   --detach (wait mode): run the same server in the background on any
+//                                                   OS, output to serve.log; print its ready line once it answers and
+//                                                   exit 0. A server already running for the session is reported, not doubled.
 //   sessions [--all]                                list this project's sessions (newest first; --all adds finished ones)
 //   pending  --session DIR                          print every Send past agent.handled (replay on resume)
 //   wait     --session DIR [--after N] [--timeout S] block until a Send newer than seq N lands, print it, exit 0
@@ -17,16 +20,19 @@
 // Files (per session folder): state.json  — written only by the agent, through `patch`
 //                             events.jsonl — appended only by this server, one line per Send
 //                             server.json  — url, port, pid of the running server
+//                             listener.json — heartbeat a running `wait` writes, so the page can tell a listener
+//                             serve.log    — output of a `serve --detach` server
 // Files (global, under GRILL_HOME): ui.json — UI prefs shared by every grill (theme)
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import tty from "node:tty";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
+const SELF = fileURLToPath(import.meta.url);
+const HERE = path.dirname(SELF);
 const HOME = process.env.GRILL_HOME || path.join(os.homedir(), ".grill-with-ui");
 // ui.json is global, not per session: the theme must survive a new grill on a new port.
 const THEMES = ["system", "light", "dark"];
@@ -46,6 +52,7 @@ function parseArgs(argv) {
   return o;
 }
 const print = (obj) => process.stdout.write(JSON.stringify(obj) + "\n");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const die = (msg, code = 2) => { process.stderr.write(`grill: ${msg}\n`); process.exit(code); };
 // Atomic: a temp file in the same folder, then rename, so a reader never sees half a file.
 function writeJson(file, obj) {
@@ -141,12 +148,39 @@ function cmdPending(o) {
   }
 }
 
+// ---- listener: is an agent listening for sends? ----
+// The page warns when no agent is listening, because sends then only queue. A sign of life is a
+// heartbeat from a running `wait` (listener.json) or a patch (state.json's mtime: only the agent
+// writes it). It counts for LISTENER_FRESH_MS: the wait loop re-runs `wait` every few seconds, so
+// this spans the gap between one wait and the next, yet a listener that is gone shows within
+// half a minute. A `serve` whose output a Monitor reads is itself the listener (see stdoutIsRead).
+const LISTENER_FRESH_MS = 30_000;
+const HEARTBEAT_MS = 2000;
+// Does anything read what this process prints? Under a Monitor stdout is a pipe the harness
+// reads. Detached (stdout is serve.log), sent to /dev/null or NUL, or left on a terminal, nobody
+// is. If stdout cannot be inspected, assume a pipe: a false "nobody listening" is the worse error.
+function stdoutIsRead() {
+  if (tty.isatty(1)) return false;
+  try { const s = fs.fstatSync(1); return !(s.isFile() || s.isCharacterDevice()); } catch { return true; }
+}
+function listenerOf(session, selfListening) {
+  if (selfListening) return { listening: true, via: "serve", at: new Date().toISOString(), session };
+  const signs = [];
+  try { const t = Date.parse(JSON.parse(fs.readFileSync(path.join(session, "listener.json"), "utf8")).at); if (Number.isFinite(t)) signs.push({ via: "wait", t }); } catch { /* no wait has run */ }
+  try { signs.push({ via: "patch", t: fs.statSync(path.join(session, "state.json")).mtimeMs }); } catch { /* no state */ }
+  const last = signs.sort((a, b) => b.t - a.t)[0];
+  if (!last) return { listening: false, via: null, at: null, session };
+  return { listening: Date.now() - last.t <= LISTENER_FRESH_MS, via: last.via, at: new Date(last.t).toISOString(), session };
+}
+
 // ---- serve ----
 function cmdServe(o) {
   const session = mustSession(o);
+  if (o.detach) return serveDetached(session);
   const events = path.join(session, "events.jsonl");
   const stateFile = path.join(session, "state.json");
   const serverFile = path.join(session, "server.json");
+  const selfListening = stdoutIsRead();
   const page = path.join(HERE, "page.html");
   let seq = lastSeq(events);
   let lastGoodState = null;
@@ -174,6 +208,7 @@ function cmdServe(o) {
       if (lastGoodState === null) return json(res, 404, { error: "no state" });
       return send(res, 200, lastGoodState, "application/json");
     }
+    if (req.method === "GET" && pathname === "/listener") return json(res, 200, listenerOf(session, selfListening));
     if (req.method === "GET" && pathname === "/events") return send(res, 200, fs.existsSync(events) ? fs.readFileSync(events) : "", "application/x-ndjson");
     if (req.method === "GET" && pathname === "/visual") {
       const visual = path.join(session, "visual.html"); // written only by the agent; shown by the page in a sandboxed iframe
@@ -222,6 +257,52 @@ function cmdServe(o) {
   process.on("SIGINT", bye); process.on("SIGTERM", bye); process.on("SIGHUP", bye);
 }
 
+// ---- serve --detach (wait mode, every OS) ----
+// A server started as a harness background task, or with a shell `&` that keeps the harness's
+// pipes open, can hold the agent's turn so `wait` never runs (issue #33). Instead this process
+// starts the same server as a detached child with its output in serve.log and no inherited pipes,
+// waits until it is listening, prints its ready line, and exits.
+async function runningServer(session) {
+  let info;
+  try { info = JSON.parse(fs.readFileSync(path.join(session, "server.json"), "utf8")); } catch { return null; }
+  if (!info || !info.url || !info.pid || !alive(info.pid)) return null;
+  try { // the pid may have been reused: trust it only if the server at that url answers for this session
+    const r = await fetch(info.url + "listener", { signal: AbortSignal.timeout(2000) });
+    return r.ok && (await r.json()).session === session ? info : null;
+  } catch { return null; }
+}
+async function serveDetached(session) {
+  const serverFile = path.join(session, "server.json");
+  const log = path.join(session, "serve.log");
+  const running = await runningServer(session);
+  if (running) return print({ type: "ready", url: running.url, session, pid: running.pid, log, already: true });
+  const out = fs.openSync(log, "w");
+  // windowsHide: no console window on Windows. detached: its own process group (POSIX: a new
+  // session, so a closing terminal's SIGHUP does not reach it).
+  const child = spawn(process.execPath, [SELF, ...process.argv.slice(2).filter((a) => a !== "--detach")],
+    { detached: true, stdio: ["ignore", out, out], windowsHide: true });
+  fs.closeSync(out);
+  let exited = null;
+  child.on("exit", (code, signal) => { exited = signal || `exit ${code}`; });
+  child.on("error", (e) => { exited = e.message; });
+  const lastLogLine = () => {
+    try { return (fs.readFileSync(log, "utf8").trim().split("\n").pop() || "").replace(/^grill: /, ""); } catch { return ""; }
+  };
+  const fail = (why) => { const last = oneLine(lastLogLine()); die(`serve --detach: ${why}${last ? `: ${last}` : ""}; see ${log}`, 1); };
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    let info = null;
+    try { info = JSON.parse(fs.readFileSync(serverFile, "utf8")); } catch { /* not written yet */ }
+    if (info && info.pid === child.pid && info.url) {
+      child.unref();
+      return print({ type: "ready", url: info.url, session, pid: child.pid, log });
+    }
+    if (exited) return fail(`the server stopped before it was ready (${exited})`);
+    if (Date.now() > deadline) { try { process.kill(child.pid); } catch { /* already gone */ } return fail("the server did not start within 10s"); }
+    await sleep(50);
+  }
+}
+
 // ---- wait (blocking, for agents without a Monitor tool) ----
 function cmdWait(o) {
   const session = mustSession(o);
@@ -231,7 +312,15 @@ function cmdWait(o) {
   // returned, which is why wait mode passes --after <agent.handled> explicitly.
   const after = o.after !== undefined && o.after !== true ? Number(o.after) : lastSeq(events);
   const deadline = Date.now() + Number(o.timeout !== undefined && o.timeout !== true ? o.timeout : 480) * 1000;
+  // The heartbeat tells the page an agent is listening (see listenerOf). A failed write only
+  // costs one beat, so it never stops the wait.
+  const listenerFile = path.join(session, "listener.json");
+  let beat = 0;
   const tick = () => {
+    if (Date.now() - beat >= HEARTBEAT_MS) {
+      beat = Date.now();
+      try { writeJson(listenerFile, { via: "wait", pid: process.pid, at: new Date().toISOString() }); } catch { /* next beat */ }
+    }
     for (const { line, ev } of readEvents(events)) {
       if ((Number(ev.seq) || 0) > after) { process.stdout.write(line + "\n"); process.exit(0); }
     }
@@ -508,5 +597,7 @@ function cmdPatch(o) {
 const o = parseArgs(process.argv.slice(2));
 const cmds = { new: cmdNew, serve: cmdServe, sessions: cmdSessions, pending: cmdPending, wait: cmdWait, url: cmdUrl, patch: cmdPatch };
 // own keys only: `toString` and friends are inherited, not subcommands
-(Object.hasOwn(cmds, o._[0] ?? "") ? cmds[o._[0]]
-  : () => die("usage: server.mjs new|serve|sessions|pending|wait|url|patch [--session DIR] ..."))(o);
+// serve --detach is async; an unexpected failure still owes the caller one line, not a stack trace.
+Promise.resolve((Object.hasOwn(cmds, o._[0] ?? "") ? cmds[o._[0]]
+  : () => die("usage: server.mjs new|serve|sessions|pending|wait|url|patch [--session DIR] ..."))(o))
+  .catch((e) => die(oneLine(e && e.message ? e.message : e), 1));

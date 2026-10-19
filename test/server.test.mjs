@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
-import { closeSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -195,6 +195,120 @@ test("url: prints the running server's url; fails fast when there is none", asyn
   assert.throws(() => run(["url", "--session", session, "--timeout", "0.3"]));
   const s = await startServe(session); t.after(s.stop);
   assert.equal(run(["url", "--session", session]), s.ready.url);
+});
+
+// ---- serve --detach: the server daemonises itself, on every OS ----
+// spawnSync waits for every pipe it handed out to close, not just for the parent to exit, so a
+// detached server that kept the caller's stdout open would hang it: the wait-mode deadlock of
+// issue #33. The timeout turns that hang into a failure instead of a stuck test run.
+const detach = (session, extra = []) =>
+  spawnSync(process.execPath, [SERVER, "serve", "--session", session, "--detach", ...extra], { env, encoding: "utf8", timeout: 15000 });
+const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const killPid = async (pid) => {
+  if (!pid || !pidAlive(pid)) return;
+  try { process.kill(pid); } catch { return; }
+  for (let i = 0; i < 100 && pidAlive(pid); i++) await sleep(50);
+};
+// Kills whatever server.json names at the end of the test, so a failed assertion never leaves
+// a detached server running.
+const killSessionServer = (session) => async () => {
+  try { await killPid(JSON.parse(readFileSync(join(session, "server.json"), "utf8")).pid); } catch { /* none started */ }
+};
+
+test("serve --detach: starts a background server, prints its ready line and exits 0 without holding the caller's pipes", async (t) => {
+  const { session } = newSession(tmp("grill-d-"));
+  t.after(killSessionServer(session));
+  const r = detach(session);
+  assert.equal(r.error, undefined, `serve --detach must return (spawnSync error: ${r.error && r.error.code})`);
+  assert.equal(r.status, 0, r.stderr);
+  const lines = r.stdout.trim().split("\n");
+  assert.equal(lines.length, 1, "one JSON line");
+  const ready = JSON.parse(lines[0]);
+  assert.equal(ready.type, "ready");
+  assert.match(ready.url, /^http:\/\/127\.0\.0\.1:\d+\/$/);
+  assert.equal(ready.session, session);
+  assert.equal(ready.log, join(session, "serve.log"));
+  assert.ok(Number.isInteger(ready.pid) && ready.pid !== r.pid, "the server is a separate process");
+  assert.ok(pidAlive(ready.pid), "and it outlives the command that started it");
+  assert.equal(JSON.parse(readFileSync(join(session, "server.json"), "utf8")).pid, ready.pid);
+  assert.equal(run(["url", "--session", session]), ready.url);
+  assert.equal((await fetch(ready.url + "state")).status, 200);
+
+  const sent = await (await post(ready.url, { actions: [{ q: "q1", type: "defer" }] })).json();
+  assert.deepEqual(sent, { ok: true, seq: 1 });
+  await sleep(100);
+  assert.match(readFileSync(join(session, "serve.log"), "utf8"), /"type":"send","seq":1/, "the server's output goes to serve.log");
+
+  const again = detach(session);
+  assert.equal(again.status, 0, again.stderr);
+  const second = JSON.parse(again.stdout.trim());
+  assert.deepEqual(second, { ...ready, already: true }, "a second --detach reports the running server instead of starting another");
+  assert.equal(JSON.parse(readFileSync(join(session, "server.json"), "utf8")).pid, ready.pid);
+
+  await killPid(ready.pid);
+  const third = detach(session);
+  assert.equal(third.status, 0, third.stderr);
+  const restarted = JSON.parse(third.stdout.trim());
+  assert.equal(restarted.url, ready.url, "a restart reuses the last port, so an open tab resumes");
+  assert.notEqual(restarted.pid, ready.pid);
+  assert.equal(restarted.already, undefined);
+});
+
+test("serve --detach: a server that cannot start exits non-zero with one line naming serve.log, and leaves nothing running", async (t) => {
+  const { session } = newSession(tmp("grill-df-"));
+  t.after(killSessionServer(session));
+  const blocker = createServer(); await new Promise((r) => blocker.listen(0, "127.0.0.1", r)); t.after(() => blocker.close());
+  const r = detach(session, ["--port", String(blocker.address().port)]);
+  assert.equal(r.error, undefined);
+  assert.notEqual(r.status, 0);
+  assert.equal(r.stdout, "");
+  assert.match(r.stderr, /^grill: [^\n]*serve\.log[^\n]*\n$/, r.stderr);
+  assert.match(readFileSync(join(session, "serve.log"), "utf8"), /EADDRINUSE/);
+});
+
+// ---- listener: can the page tell whether an agent is listening? ----
+const listener = async (url) => (await fetch(url + "listener")).json();
+const ago = (ms) => new Date(Date.now() - ms);
+// A fresh `new` or patch counts as a sign of life; push state.json's mtime into the past so
+// only the listener under test speaks.
+const quiet = (session) => utimesSync(join(session, "state.json"), ago(10 * 60_000), ago(10 * 60_000));
+
+test("listener: a serve nobody reads is not a listener; a running wait is; its heartbeat goes stale; a patch counts", async (t) => {
+  const { session } = newSession(tmp("grill-l-"));
+  t.after(killSessionServer(session));
+  quiet(session);
+  const ready = JSON.parse(detach(session).stdout.trim());
+  let l = await listener(ready.url);
+  assert.equal(l.listening, false, "a detached server's output goes to a file: nobody is listening");
+  assert.equal(l.session, session);
+
+  const w = spawn(process.execPath, [SERVER, "wait", "--session", session, "--timeout", "20"], { env, stdio: ["ignore", "pipe", "inherit"] });
+  t.after(() => { if (w.exitCode === null) w.kill(); });
+  for (let i = 0; i < 60 && !(l = await listener(ready.url)).listening; i++) await sleep(100);
+  assert.equal(l.listening, true, "a running wait marks the session as listened to");
+  assert.equal(l.via, "wait");
+  assert.ok(Date.now() - Date.parse(l.at) < 5000, l.at);
+  await new Promise((res) => { w.on("exit", res); w.kill(); });
+
+  // The heartbeat outlives the wait for a short grace (the loop re-runs wait), then goes stale.
+  writeFileSync(join(session, "listener.json"), JSON.stringify({ via: "wait", pid: w.pid, at: ago(5 * 60_000).toISOString() }));
+  l = await listener(ready.url);
+  assert.equal(l.listening, false, "a heartbeat minutes old is not a listener");
+  assert.equal(l.via, "wait", "the last sign is still reported");
+
+  run(["patch", "--session", session], { input: JSON.stringify({ agent: { status: "waiting" } }) });
+  l = await listener(ready.url);
+  assert.equal(l.listening, true, "the agent just patched state.json: it is active");
+  assert.equal(l.via, "patch");
+});
+
+test("listener: a serve whose output is piped to a reader (a Monitor) is itself the listener", async (t) => {
+  const { session } = newSession(tmp("grill-lm-"));
+  quiet(session);
+  const s = await startServe(session); t.after(s.stop);
+  const l = await listener(s.ready.url);
+  assert.equal(l.listening, true);
+  assert.equal(l.via, "serve");
 });
 
 test("serve: reuses the last port from server.json, falls back to ephemeral when it is taken; --port wins", async (t) => {

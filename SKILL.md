@@ -391,11 +391,17 @@ On a `finish` action, or when the user says finish in the terminal:
 
 ## Wait mode (agents without a Monitor tool)
 
-Start the server detached with its output going to a log:
-`nohup node $SKILL/server.mjs serve --session <session> > <session>/serve.log 2>&1 &`.
-Verify it with `url` as in Start. If the harness terminates detached children, keep `serve`
-in a harness-managed running shell session instead and verify `url` again. A live page
-confirms the server is running, **not** that the agent is listening.
+Start the server with `node $SKILL/server.mjs serve --session <session> --detach` (macOS,
+Linux and Windows alike). It puts the server in the background with its output in
+`<session>/serve.log`, prints the ready line with the URL once the server answers, and exits;
+if a server for the session is already running it says so (`"already": true`) instead of
+starting another. Never start `serve` as a harness background task or with a shell `&`: it
+can hold your turn so `wait` never runs. Verify it with `url` as in Start. If the harness
+terminates detached children, keep `serve` in a harness-managed running shell session instead
+and verify `url` again. A live page confirms the server is running, **not** that the agent is
+listening: the page tracks that separately. Each running `wait` leaves a heartbeat, and a
+patch counts too; when neither has happened for 30 seconds and you are not `working`, the page
+says no agent is listening and that sends will queue. Keep the gap between waits short.
 
 Keep this loop active in the current agent turn:
 
