@@ -3,7 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { closeSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
+import { request } from "node:http";
+import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -188,6 +189,104 @@ test("serve: /visual serves the session's visual.html (no-store), 404 JSON when 
   assert.match(hit.headers.get("content-type"), /^text\/html/);
   assert.equal(hit.headers.get("cache-control"), "no-store");
   assert.equal(await hit.text(), html);
+});
+
+// A raw request: fetch cannot set Host (it is a forbidden header), which is exactly what a
+// DNS-rebinding page controls, so these go through node:http.
+function raw(url, { method = "GET", path = "/", host, headers = {}, body } = {}) {
+  const u = new URL(url);
+  return new Promise((resolve, reject) => {
+    const req = request({ hostname: u.hostname, port: u.port, method, path, setHost: host === undefined, headers: { ...(host === undefined ? {} : { host }), ...headers } }, (res) => {
+      let b = ""; res.setEncoding("utf8"); res.on("data", (c) => { b += c; }); res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: b }));
+    });
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
+test("serve: every route answers only requests addressed to this server's own loopback name (DNS rebinding)", async (t) => {
+  const { session } = newSession(tmp("grill-h-"));
+  writeFileSync(join(session, "visual.html"), "<!doctype html><p>private plan</p>");
+  const s = await startServe(session); t.after(s.stop);
+  const port = Number(new URL(s.ready.url).port);
+  const themeNow = async () => (await raw(s.ready.url, { host: `127.0.0.1:${port}` })).body.match(/data-theme="([^"]+)"/)[1];
+  const themeBefore = await themeNow();
+  const send = JSON.stringify({ actions: [{ q: "q1", type: "defer" }] });
+  const routes = [
+    { method: "GET", path: "/" }, { method: "GET", path: "/state" }, { method: "GET", path: "/events" },
+    { method: "GET", path: "/visual?v=1" }, { method: "GET", path: "/nope" },
+    { method: "POST", path: "/send", body: send, headers: { "content-type": "application/json" } },
+    { method: "POST", path: "/theme", body: JSON.stringify({ theme: themeBefore === "light" ? "dark" : "light" }), headers: { "content-type": "application/json" } },
+  ];
+  for (const host of [`attacker.example:${port}`, "attacker.example", `127.0.0.1:${port + 1}`, `localhost:${port + 1}`, `127.0.0.1.attacker.example:${port}`, "127.0.0.1", ""]) {
+    for (const r of routes) {
+      const res = await raw(s.ready.url, { ...r, host });
+      assert.equal(res.status, 403, `${r.method} ${r.path} with Host ${JSON.stringify(host)} must be refused`);
+      assert.deepEqual(JSON.parse(res.body), { error: "unrecognized Host header" });
+      assert.doesNotMatch(res.body, /private plan|Fonts/);
+    }
+  }
+  assert.equal(readFileSync(join(session, "events.jsonl"), "utf8"), "", "no refused send landed");
+  assert.equal(s.out.lines.length, 1, "and none printed");
+  assert.equal(await themeNow(), themeBefore, "a refused /theme changed nothing");
+
+  for (const host of [`127.0.0.1:${port}`, `localhost:${port}`, `LOCALHOST:${port}`, `[::1]:${port}`]) {
+    assert.equal((await raw(s.ready.url, { path: "/state", host })).status, 200, `Host ${host} is this server`);
+  }
+  assert.equal((await raw(s.ready.url, { method: "POST", path: "/send", host: `localhost:${port}`, body: send, headers: { "content-type": "application/json" } })).status, 200);
+
+  // HTTP/1.0 lets a client leave Host out entirely; that is refused too.
+  const noHost = await new Promise((resolve, reject) => {
+    const sock = connect(port, "127.0.0.1", () => sock.end("GET /state HTTP/1.0\r\n\r\n"));
+    let b = ""; sock.setEncoding("utf8"); sock.on("data", (c) => { b += c; }); sock.on("end", () => resolve(b)); sock.on("error", reject);
+  });
+  assert.match(noHost, /^HTTP\/1\.[01] 403 /, "a request with no Host header is refused");
+});
+
+test("serve: /visual carries a sandbox CSP so it never runs with the grill's origin, even opened directly", async (t) => {
+  const { session } = newSession(tmp("grill-csp-"));
+  writeFileSync(join(session, "visual.html"), "<!doctype html><p>v</p>");
+  const s = await startServe(session); t.after(s.stop);
+  const hit = await fetch(s.ready.url + "visual?v=1");
+  assert.equal(hit.status, 200);
+  assert.equal(hit.headers.get("content-security-policy"), "sandbox allow-scripts");
+  const page = await fetch(s.ready.url);
+  assert.equal(page.headers.get("content-security-policy"), null, "the page itself is not sandboxed");
+});
+
+test("serve: a request body over 1 MB is refused with 413 and nothing lands; a large real send still works", async (t) => {
+  const { session } = newSession(tmp("grill-big-"));
+  const s = await startServe(session); t.after(s.stop);
+  const big = JSON.stringify({ actions: [{ q: "q1", type: "thread", text: "x".repeat(1024 * 1024) }] });
+
+  const declared = await raw(s.ready.url, { method: "POST", path: "/send", body: big, headers: { "content-type": "application/json", "content-length": Buffer.byteLength(big) } });
+  assert.equal(declared.status, 413, "an oversize Content-Length is refused before the body is read");
+  assert.deepEqual(JSON.parse(declared.body), { error: "request body too large (limit 1 MB)" });
+
+  // Chunked: no Content-Length, so the cap has to hold while the body streams in.
+  const chunked = await new Promise((resolve, reject) => {
+    const u = new URL(s.ready.url);
+    const req = request({ hostname: u.hostname, port: u.port, method: "POST", path: "/send", headers: { "content-type": "application/json", "transfer-encoding": "chunked" } }, (res) => {
+      let b = ""; res.setEncoding("utf8"); res.on("data", (c) => { b += c; }); res.on("end", () => resolve({ status: res.statusCode, body: b }));
+    });
+    req.on("error", () => {}); // the server may close the socket while the rest is still being written
+    req.on("close", () => setTimeout(() => reject(new Error("no response to a chunked oversize body")), 2000).unref());
+    const chunk = "x".repeat(64 * 1024);
+    let sent = 0;
+    const pump = () => { while (sent < 4 * 1024 * 1024) { sent += chunk.length; if (!req.write(chunk)) return req.once("drain", pump); } req.end(); };
+    req.write('{"actions":[{"q":"q1","type":"thread","text":"'); pump();
+  });
+  assert.equal(chunked.status, 413, "a streamed body is cut off at the cap");
+
+  const themeBig = await raw(s.ready.url, { method: "POST", path: "/theme", body: JSON.stringify({ theme: "dark", pad: "x".repeat(1024 * 1024) }), headers: { "content-type": "application/json" } });
+  assert.equal(themeBig.status, 413, "/theme has the same cap");
+
+  assert.equal(readFileSync(join(session, "events.jsonl"), "utf8"), "", "no oversize send landed");
+  const ok = await post(s.ready.url, { actions: [{ q: "q1", type: "thread", text: "é".repeat(200 * 1024) }] });
+  assert.equal(ok.status, 200, "a long (400 KB) multibyte thread message is well under the cap");
+  await s.out.nth(2);
+  const landed = JSON.parse(readFileSync(join(session, "events.jsonl"), "utf8"));
+  assert.equal(landed.actions[0].text, "é".repeat(200 * 1024), "multibyte text split across chunks survives intact");
 });
 
 test("url: prints the running server's url; fails fast when there is none", async (t) => {

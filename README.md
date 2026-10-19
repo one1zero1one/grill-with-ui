@@ -160,6 +160,12 @@ node server.mjs patch    --session DIR [--file P]              apply a JSON patc
 non-zero and leaves the file untouched; a good one prints one short summary line, never the
 state.
 
+`serve` listens on 127.0.0.1 and answers only requests addressed to it by its own name
+(`127.0.0.1:<port>` or `localhost:<port>`), so a web page that points its hostname at your
+machine (DNS rebinding) cannot read the session. `/visual` is sent with a sandbox
+Content-Security-Policy: its scripts run, but never with the grill's origin, even when the
+visual is opened in its own tab. Request bodies over 1 MB are refused.
+
 `GRILL_HOME` overrides `~/.grill-with-ui`.
 
 ## Tests

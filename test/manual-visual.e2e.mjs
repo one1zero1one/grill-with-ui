@@ -83,8 +83,37 @@ try {
   await page.waitForFunction(() => document.querySelector("#visual-frame")?.getAttribute("src") === "/visual?v=2");
   assert.equal(await page.locator("#visual-stale").count(), 0, "a successful requested draw clears the stale indication");
   assert.equal(await page.frameLocator("#visual-frame").locator("#content").textContent(), "Version two");
+
+  // The visual's scripts run, but never with the grill's origin: not in the iframe, and not
+  // when the visual is opened directly in a tab (the server sends a sandbox CSP with it).
+  writeFileSync(join(session, "visual.html"), `<!doctype html><title>Visual fixture</title><p id='content'>Version three</p><p id='ran'></p><p id='read'></p><p id='sent'></p>
+<script>
+const put = (id, v) => { document.getElementById(id).textContent = v; };
+put("ran", "scripts run");
+fetch("/state").then((r) => r.text()).then((t) => (t.includes("Manual visuals") ? "read" : "empty"), () => "blocked").then((v) => put("read", v));
+fetch("/send", { method: "POST", body: JSON.stringify({ actions: [{ type: "visualize" }] }) }).then((r) => "status " + r.status, () => "blocked").then((v) => put("sent", v));
+</script>`);
+  state.visual.version = 3;
+  save();
+  await page.waitForFunction(() => document.querySelector("#visual-frame")?.getAttribute("src") === "/visual?v=3");
+  const frame = page.frameLocator("#visual-frame");
+  await frame.locator("#sent").filter({ hasText: /./ }).waitFor();
+  await frame.locator("#read").filter({ hasText: /./ }).waitFor();
+  assert.equal(await frame.locator("#ran").textContent(), "scripts run", "the visual's scripts still run in the iframe");
+  assert.equal(await frame.locator("#read").textContent(), "blocked", "the iframed visual cannot read /state");
+  const tab = await browser.newPage();
+  tab.on("pageerror", (error) => errors.push(error.message));
+  await tab.goto(url + "visual?v=3");
+  await tab.locator("#sent").filter({ hasText: /./ }).waitFor();
+  await tab.locator("#read").filter({ hasText: /./ }).waitFor();
+  assert.equal(await tab.locator("#ran").textContent(), "scripts run", "the visual's scripts run when opened directly");
+  assert.equal(await tab.locator("#read").textContent(), "blocked", "the visual opened directly cannot read /state");
+  assert.notEqual(await tab.locator("#sent").textContent(), "status 200", "the visual opened directly cannot send to the agent");
+  await tab.close();
+  assert.equal(readFileSync(join(session, "events.jsonl"), "utf8").trim().split("\n").length, 2, "neither copy of the visual landed a send");
+
   assert.deepEqual(errors, []);
-  console.log("manual visual e2e: passed (acknowledgement, next-round input, preserved iframe, stale status, explicit regeneration, reload)");
+  console.log("manual visual e2e: passed (acknowledgement, next-round input, preserved iframe, stale status, explicit regeneration, reload, sandboxed visual)");
 } finally {
   await browser?.close();
   if (child.exitCode === null) await new Promise((resolve) => { child.once("exit", resolve); child.kill(); });

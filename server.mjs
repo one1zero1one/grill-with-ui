@@ -150,11 +150,40 @@ function cmdServe(o) {
   const page = path.join(HERE, "page.html");
   let seq = lastSeq(events);
   let lastGoodState = null;
+  let selfHosts = [];
   let selfOrigins = [];
 
-  const send = (res, code, body, type) => { res.writeHead(code, { "content-type": type, "cache-control": "no-store" }); res.end(body); };
-  const json = (res, code, obj) => send(res, code, JSON.stringify(obj), "application/json");
-  const readBody = (req) => new Promise((resolve) => { let b = ""; req.on("data", (c) => { b += c; }); req.on("end", () => resolve(b)); });
+  const send = (res, code, body, type, headers = {}) => { res.writeHead(code, { "content-type": type, "cache-control": "no-store", ...headers }); res.end(body); };
+  const json = (res, code, obj, headers) => send(res, code, JSON.stringify(obj), "application/json", headers);
+  // A Send is a few KB even with long thread messages; 1 MB is generous and keeps a runaway
+  // or hostile client from growing this process without bound. Rejects with TOO_LARGE.
+  const MAX_BODY = 1024 * 1024;
+  const TOO_LARGE = Symbol("too large");
+  const readBody = (req) => new Promise((resolve, reject) => {
+    if (Number(req.headers["content-length"]) > MAX_BODY) return reject(TOO_LARGE);
+    const chunks = []; let n = 0;
+    req.on("data", (c) => {
+      n += c.length;
+      if (n > MAX_BODY) { req.removeAllListeners("data"); reject(TOO_LARGE); return; }
+      chunks.push(c);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+  // Closing the socket while the client is still writing makes the kernel reset the connection
+  // and the client never sees the 413. So the rest is read and dropped (never kept), and a
+  // client still sending 2 s later is cut off.
+  const tooLarge = (req, res) => {
+    req.resume();
+    setTimeout(() => { if (!req.complete) req.socket.destroy(); }, 2000).unref();
+    json(res, 413, { error: "request body too large (limit 1 MB)" });
+  };
+  // DNS rebinding: a web page whose hostname the attacker re-points at 127.0.0.1 becomes
+  // "same-origin" with this server in the browser's eyes and could read /state, /events and
+  // /visual. Its requests still carry the attacker's hostname in Host, so answer only requests
+  // addressed to this server's own loopback names. A mode that listens beyond loopback adds
+  // its own host:port to selfHosts (and so to selfOrigins).
+  const hostAllowed = (req) => selfHosts.includes(String(req.headers.host || "").toLowerCase());
   // Browsers set Origin on every POST, same-origin or not; reject a mismatch so another tab (or
   // the sandboxed visual iframe, whose Origin is "null") can't forge a request. No Origin at all —
   // curl, wait mode, this project's own tests — is still allowed. http://localhost:<port> is this
@@ -162,6 +191,7 @@ function cmdServe(o) {
   const originOk = (req) => { const o = req.headers.origin; return o === undefined || selfOrigins.includes(o); };
 
   const srv = http.createServer(async (req, res) => {
+    if (!hostAllowed(req)) return json(res, 403, { error: "unrecognized Host header" });
     const { pathname } = new URL(req.url, "http://x");
     if (req.method === "GET" && pathname === "/") {
       const html = fs.readFileSync(page, "utf8").replace("__GRILL_THEME__", readTheme());
@@ -178,12 +208,15 @@ function cmdServe(o) {
     if (req.method === "GET" && pathname === "/visual") {
       const visual = path.join(session, "visual.html"); // written only by the agent; shown by the page in a sandboxed iframe
       if (!fs.existsSync(visual)) return json(res, 404, { error: "no visual" });
-      return send(res, 200, fs.readFileSync(visual), "text/html; charset=utf-8");
+      // The iframe's sandbox attribute only applies inside the page; this header sandboxes the
+      // visual wherever it is opened (a new tab, a bookmark), so its scripts never get this
+      // server's origin and with it /state, /events or a same-origin /send.
+      return send(res, 200, fs.readFileSync(visual), "text/html; charset=utf-8", { "content-security-policy": "sandbox allow-scripts" });
     }
     if (req.method === "POST" && pathname === "/send") {
       if (!originOk(req)) return json(res, 403, { error: "cross-origin request rejected" });
       let parsed;
-      try { parsed = JSON.parse(await readBody(req)); } catch { return json(res, 400, { error: "body must be JSON" }); }
+      try { parsed = JSON.parse(await readBody(req)); } catch (e) { return e === TOO_LARGE ? tooLarge(req, res) : json(res, 400, { error: "body must be JSON" }); }
       if (!parsed || !Array.isArray(parsed.actions) || parsed.actions.length === 0) return json(res, 400, { error: "actions must be a non-empty array" });
       const line = JSON.stringify({ type: "send", seq: ++seq, at: new Date().toISOString(), session, actions: parsed.actions });
       fs.appendFileSync(events, line + "\n");
@@ -193,7 +226,7 @@ function cmdServe(o) {
     if (req.method === "POST" && pathname === "/theme") {
       if (!originOk(req)) return json(res, 403, { error: "cross-origin request rejected" });
       let t;
-      try { t = JSON.parse(await readBody(req)).theme; } catch {}
+      try { t = JSON.parse(await readBody(req)).theme; } catch (e) { if (e === TOO_LARGE) return tooLarge(req, res); }
       if (!THEMES.includes(t)) return json(res, 400, { error: "theme must be system, light or dark" });
       writeJson(uiFile, { theme: t });
       return json(res, 200, { ok: true });
@@ -211,7 +244,8 @@ function cmdServe(o) {
   srv.on("listening", () => {
     const { port } = srv.address();
     const url = `http://127.0.0.1:${port}/`;
-    selfOrigins = [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
+    selfHosts = ["127.0.0.1", "localhost", "[::1]"].map((h) => `${h}:${port}`);
+    selfOrigins = selfHosts.map((h) => `http://${h}`);
     writeJson(serverFile, { url, port, pid: process.pid, started: new Date().toISOString() });
     print({ type: "ready", url, session });
   });
