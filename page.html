@@ -469,14 +469,9 @@ async function explore(id) {
 
 // ---- new replies: agent messages in a question's discussion this browser has not seen ----
 // local.seen[id] counts the agent messages at the head of question id's thread that have been
-// seen: on screen in its open discussion while the tab was visible. Threads only append, so the
-// replies not seen yet are the agent messages past that count. A count, unlike the last `at`,
-// holds when one patch stamps several messages with the same time or a message has none.
-// Seen is per browser and lives with the staged work in localStorage: the page never writes
-// state.json (the agent's) or events.jsonl (Sends only) for it. No record for this grill
-// (a new browser, or a grill begun before this existed) takes every reply already there as
-// seen, so the page does not open to a list of dots. localStorage is per origin, so if serve
-// comes back on another port the record starts over the same way.
+// seen: on screen in its open discussion while the tab was visible. Patches append to threads;
+// syncSeen also handles observed shrinkage after deletion. See docs/design.md for the count
+// rationale and README.md#use for persistence and first-visit behavior.
 let seenFor = null, openedAt = null, reveal = false;
 let threadCounts = new Map();
 const glimpsed = new Map(); // replies past a seen count that were on screen; the count moves only through an unbroken run of them

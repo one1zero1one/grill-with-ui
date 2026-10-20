@@ -127,14 +127,12 @@ keeps one Claude session behind it so nothing is ever out of context.
   against a 64.7 KB whole file. Incoming Sends were already diffs; this makes the outgoing
   side one too. Locked decision 2 still holds: the agent is the only writer.
 - **New-reply markers are per browser** (2026-10-19, after a 19-question grill where replies
-  on accepted questions got lost among the side-discussions). The page counts, per question,
-  the agent messages that have been on screen in its open discussion while the tab was
-  visible, and keeps that count in the same localStorage record as staged work. A question
-  with more agent messages than its count gets a dot in the list, answered ones included; the
-  header counts those questions, and Next unread opens the next one. A count rather than the
-  last `at`, because one patch stamps everything it appends with the same time. Nothing is
-  written to `state.json` or `events.jsonl`, so locked decision 2 holds. A browser with no
-  record takes every reply already there as seen. The visual's feedback thread has no markers.
+  on accepted questions got lost among the side-discussions). Use a count rather than the
+  last `at`: one patch stamps everything it appends with the same time, timestamps may be
+  absent, and agents can supply explicit times. Tracking stays in the browser, with no writes
+  to `state.json` or `events.jsonl`, preserving locked decision 2. See [Use](../README.md#use)
+  for marker behavior and persistence, and the new-replies section of
+  [`page.html`](../page.html) for the contiguous-count and visibility invariants.
 
 ## Verified facts (2026-09-06)
 
