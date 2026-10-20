@@ -114,6 +114,16 @@ The checkbox hides when the grill is finished. Finish reconciles and copies the 
 visual next to the design doc as
 `docs/<topic>-visual.html`.
 
+When the agent replies in a question's discussion, the question gets a blue dot in the list
+until the reply has been on screen in its open discussion while the tab is visible; answered
+and deferred questions get one too. **Next unread · N** in the header counts those questions
+and opens the next one in list order, wrapping around, with the reply in view; replies that
+arrived since you opened a discussion are tagged *new* there until you leave it. Your own
+messages never count. Seen is remembered per browser, in localStorage beside the staged work:
+a browser that opens a grill for the first time takes the replies already there as seen, and
+because localStorage is per origin, a server that comes back on another port starts over the
+same way.
+
 **Finish grill** sends at once (after an inline confirm), including the same pending items
 as Send; the agent writes the design doc to the path shown in the header (default
 `docs/<topic>-design.md` in your project) and stops.
