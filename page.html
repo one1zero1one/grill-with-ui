@@ -478,17 +478,26 @@ async function explore(id) {
 // seen, so the page does not open to a list of dots. localStorage is per origin, so if serve
 // comes back on another port the record starts over the same way.
 let seenFor = null, openedAt = null, reveal = false;
-const glimpsed = new Set(); // replies past a seen count that were on screen; the count moves only through an unbroken run of them
+let threadCounts = new Map();
+const glimpsed = new Map(); // replies past a seen count that were on screen; the count moves only through an unbroken run of them
 const agentMsgs = (q) => (Array.isArray(q.thread) ? q.thread : []).filter((m) => m && m.who === "agent");
 const seenOf = (q) => Math.min(Number((local.seen || {})[q.id]) || 0, agentMsgs(q).length);
 const unseenOf = (q) => agentMsgs(q).length - seenOf(q);
 const listOrder = () => rounds().flatMap(([, list]) => list); // the order the question list shows
 const unreadQs = () => listOrder().filter((q) => unseenOf(q) > 0);
-const glimpseKey = (q, k, m) => `${q.id}#${k}#${m.at || ""}`;
+const glimpseKey = (k, m) => `${k}#${m.at || ""}`;
 function syncSeen() { // on every state
-  if (seenFor !== storeKey) { seenFor = storeKey; openedAt = null; glimpsed.clear(); }
+  if (seenFor !== storeKey) { seenFor = storeKey; openedAt = null; glimpsed.clear(); threadCounts.clear(); }
   let changed = !local.seen || typeof local.seen !== "object";
   if (changed) local.seen = Object.fromEntries(qs().map((q) => [q.id, agentMsgs(q).length]));
+  const counts = new Map(qs().map((q) => [q.id, agentMsgs(q).length]));
+  for (const [id, n] of threadCounts) {
+    if (!counts.has(id) || counts.get(id) < n) {
+      glimpsed.delete(id);
+      if (openedAt && openedAt.q === id) openedAt = null;
+    }
+  }
+  threadCounts = counts;
   // A thread that shrank was rewritten: catch its count up, so the next reply on it still shows.
   for (const q of qs()) if (local.seen[q.id] > agentMsgs(q).length) { local.seen[q.id] = agentMsgs(q).length; changed = true; }
   if (changed) save();
@@ -516,12 +525,14 @@ function noteSeen() {
   const top = Math.max(b.top, 0), bottom = Math.min(b.bottom, innerHeight, document.querySelector("footer").getBoundingClientRect().top); // on a phone the footer sticks over the page
   if (bottom <= top) return false;
   const msgs = agentMsgs(q), was = seenOf(q);
+  if (!glimpsed.has(q.id)) glimpsed.set(q.id, new Set());
+  const sightings = glimpsed.get(q.id);
   agentEls(q).forEach((el, k) => {
     const r = el.getBoundingClientRect(), shown = Math.min(r.bottom, bottom) - Math.max(r.top, top);
-    if (k >= was && shown > 0 && shown >= Math.min(r.height, bottom - top) / 2) glimpsed.add(glimpseKey(q, k, msgs[k]));
+    if (k >= was && shown > 0 && shown >= Math.min(r.height, bottom - top) / 2) sightings.add(glimpseKey(k, msgs[k]));
   });
   let n = was;
-  while (n < msgs.length && glimpsed.delete(glimpseKey(q, n, msgs[n]))) n++;
+  while (n < msgs.length && sightings.delete(glimpseKey(n, msgs[n]))) n++;
   if (n === was) return false;
   local.seen[q.id] = n; save();
   return true;
@@ -740,9 +751,9 @@ function renderMain() {
 }
 function renderAside() {
   const aside = $("aside");
-  if (activeView() === "visualize") return renderFeedback(aside);
+  if (activeView() === "visualize") { openedAt = null; return renderFeedback(aside); }
   const q = byId(selected);
-  if (!q) { aside.innerHTML = ""; return; }
+  if (!q) { openedAt = null; aside.innerHTML = ""; return; }
   const s = local.staged[q.id] || {}; const lk = locked(); const d = local.drafts[q.id] || {};
   const thread = Array.isArray(q.thread) ? q.thread : [];
   const msgs = thread.map((m) => `<div class="msg ${m.who === "agent" ? "agent" : "user"}"><div class="who">${esc(m.who)}${m.at ? " · " + timeOf(m.at) : ""}</div><div class="text">${esc(m.text)}</div></div>`).join("")
