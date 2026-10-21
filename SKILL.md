@@ -238,10 +238,13 @@ and return to listening. Leave `agent.handled` as it is: there was no send.
    question ids it depends on and the next round number. Questions waiting on a
    fact-finding sub-agent are not in it yet; set `note` to say what is being looked up.
    **When the frontier is empty**, the last round is one closing question, `grilling`'s
-   confirmation of a shared understanding: title "Is this our shared understanding?", a
-   `body` with one line per settled decision (`Qn <title>: <the answer in words>`),
-   options `A` yes and `B` no, something is off (say what in the discussion), and `rec` A.
-   Set `note` to say Finish opens once it is answered. A `B` or text answer means the tree
+   confirmation of a shared understanding: title "Is this our shared understanding?", the
+   [summary](#the-summary) as its `body`, options `A` yes and `B` no, something is off (say what in the discussion), and `rec` A.
+   Set `note` to say Finish opens once it is answered. When a visual exists, the closing
+   question turns it from an aid into part of the confirmation: in the same patch set
+   `"visual": { "stale": true }` if any decision since its version changes what it shows,
+   and say in `note` to Regenerate before answering, so the picture checked against the
+   summary has nothing left "assumed". Don't draw it yourself; the user asks. A `B` or text answer means the tree
    is not done: reopen or add the questions it points at, and ask the closing question again
    when they are settled.
    With `domain-modeling` loaded, do its work in this same step, inline, as it says: write
@@ -432,8 +435,8 @@ writes no design doc: the record is this conversation, plus `GLOSSARY.md` and AD
    with `handled`. The page shows the finished banner and locks staging.
 3. Print the outcome in the terminal. The answers live on the page, and what comes next (the
    skill that ran this grill, `/to-spec`, the implementation) reads this conversation, so
-   write the tree out here: one line per answered question, `Qn <title>: <the answer in
-   words, never just a letter>`, with the user's reason when they gave one. If any question
+   write the [summary](#the-summary) out here, with each decision's question id after it
+   (`(Q7)`) so the calling skill can look it up. If any question
    is still open or reopened, start with `Ended early: N questions open` and list them under
    `Left open:`; never fill one in with your recommendation, since `grilling` leaves nothing
    silently assumed. Then, with
@@ -445,6 +448,23 @@ writes no design doc: the record is this conversation, plus `GLOSSARY.md` and AD
    `/improve-codebase-architecture`, …), carry on with that skill's next step; after an early
    end, tell it the grill is not settled (for `/wayfinder`, the ticket is not resolved).
    Otherwise end the turn; what to do with the result is the user's call.
+
+### The summary
+
+The closing question's body and the Finish printout are the same summary, short enough to
+read on one screen (about twenty lines, never one line per question):
+
+- Group the decisions under three to seven short headings, one per main branch of the
+  design tree, with a blank line between groups.
+- Under each heading, one line per decision that matters to someone building from it, in
+  plain words of about a dozen, never just an option letter. Fold routine choices into
+  the decision they serve; a `durable` one gets its reason in a few words.
+- On the page the body is plain text (line breaks show, Markdown does not): write a heading
+  as its own line ending in a colon and each decision as `- …`. In the terminal, Markdown
+  headings and bullets are fine.
+- When a visual exists, its first line points to it ("The visual shows this as a diagram;
+  v3, up to date", or "v2, out of date: Regenerate first"), so the user can check the
+  picture against the words.
 
 ## Wait mode (agents without a Monitor tool)
 
