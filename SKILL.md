@@ -1,12 +1,29 @@
 ---
 name: grill-with-ui
-description: Run a grilling interview on a local browser page instead of the terminal. Every question is laid out with its recommendation, answerable in any order, with a per-question discussion thread and one "Send to Agent" button. Use when the user says "grill with ui", invokes /grill-with-ui with a topic, or says "/grill-with-ui resume".
+description: Run Matt Pocock's grilling (or grill-with-docs) on a local browser page instead of the terminal. Every question is laid out with its recommendation, answerable in any order, with a per-question discussion thread and one "Send to Agent" button. Use when the user says "grill with ui", invokes /grill-with-ui with a topic, says "/grill-with-ui resume", or wants the browser page for a grilling another skill is running.
 ---
 
 # grill-with-ui
 
 `$SKILL` below means this skill's base directory (the folder holding this file). Everything is
 plain Node with no install step: `node $SKILL/server.mjs <command>`.
+
+## Method: Matt's grilling, on a page
+
+This skill is the `grilling` skill from Matt Pocock's skills, with a browser page in place of
+the terminal. **How to interview** (the design tree, rounds, the frontier, recommended
+answers, facts being your job and decisions the user's, when the session is done) comes from
+that skill, not from this file. Before anything else, call the Skill tool with `"grilling"`
+(no Skill tool: read `grilling/SKILL.md` from the agent's skills folder) and follow it. With
+`--docs`, or when the conversation already loaded `domain-modeling` (`/grill-with-docs`,
+`/triage`, `/wayfinder` do), also call the Skill tool with `"domain-modeling"` and follow it
+too: that is `/grill-with-docs` on the page. If `grilling` is not installed, say so, point
+to https://github.com/mattpocock/skills, and stop.
+
+Where this file and `grilling` meet, `grilling` wins on method and this file wins on
+mechanics. The only thing of `grilling` this skill replaces is the shape of a round: a round
+is published to the page with `patch` (see [Questions on the page](#questions-on-the-page)),
+not printed in the terminal, and the user answers by Send, not by typing a reply.
 
 Two files carry a grill. `state.json` is **yours alone**: questions, recommendations, thread
 replies, statuses, agent status. `events.jsonl` is **the page's alone**: one line per Send.
@@ -98,39 +115,45 @@ node $SKILL/server.mjs patch --session <session> <<'GRILL_PATCH'
 GRILL_PATCH
 ```
 
-## Start (`/grill-with-ui <topic>`, `$grill-with-ui <topic>`, or "grill with ui: <topic>")
+## Start (`/grill-with-ui [--docs] <topic>`, `$grill-with-ui <topic>`, or "grill with ui: <topic>")
 
-1. From the project directory run
-   `node $SKILL/server.mjs new --topic "<topic>" --intent "<why this grill exists, 1-2 sentences>" --doc "<doc path>"`.
-   The doc path defaults to `docs/<slug-of-topic>-design.md` under the project root (create the
-   folder later if needed). Pass `--intent` with the user's goal in their words (1-2 sentences),
-   taken from the topic message that started this grill. The topic is the title; the intent
-   is the why. Omit it only when the topic arrived as a bare phrase with no goal attached.
-   The page shows it under the topic so several open
-   grills stay distinguishable. It prints one JSON line; keep `session` (the session folder).
-2. Patch round 1 in (`new` already wrote the skeleton): one to three independent questions,
-   each with lettered options, one recommendation, and a one-paragraph why, plus any `terms`
+When another skill is already grilling and the user wants the page, the topic and intent come
+from that skill's grilling so far; questions already settled in the terminal go into round 1
+as answered questions, so the page starts from the same tree.
+
+1. Load `grilling` (and `domain-modeling` when it applies), as [Method](#method-matts-grilling-on-a-page) says.
+2. From the project directory run
+   `node $SKILL/server.mjs new --topic "<topic>" --intent "<why this grill exists, 1-2 sentences>"`.
+   Pass `--intent` with the user's goal in their words (1-2 sentences), taken from the topic
+   message that started this grill. The topic is the title; the intent is the why. Omit it
+   only when the topic arrived as a bare phrase with no goal attached. The page shows it under
+   the topic so several open grills stay distinguishable. A grill writes no design doc, so
+   `--doc` marks the mode instead: with `domain-modeling` loaded pass `--doc GLOSSARY.md`
+   (the page header then shows where the record goes, and Resume knows to load it again);
+   otherwise give no `--doc`. It prints one JSON line; keep `session` (the session folder).
+3. Patch round 1 in (`new` already wrote the skeleton): the whole frontier, as `grilling`
+   defines it, laid out as in [Questions on the page](#questions-on-the-page), plus any `terms`
    and `"agent": { "status": "waiting" }`.
-3. Open a **persistent Monitor** (`persistent: true`) whose command is
+4. Open a **persistent Monitor** (`persistent: true`) whose command is
    `node $SKILL/server.mjs serve --session <session>`, description `grill page: <topic>`.
    No Monitor tool in your harness (Codex, Gemini CLI, Cursor, Copilot, others)? Use
    "Wait mode" at the end of this file for this step and for every wait after it.
-4. Run `node $SKILL/server.mjs url --session <session>`; it prints the URL.
-5. Print ONE line: the URL, how many questions wait, and the doc path (say the user can change
-   the path by typing in the terminal). Return to listening.
+5. Run `node $SKILL/server.mjs url --session <session>`; it prints the URL.
+6. Print ONE line: the URL and how many questions wait. Return to listening.
 
 ## Resume (`/grill-with-ui resume`)
 
 1. From the project directory run `node $SKILL/server.mjs sessions` (one JSON line per
    unfinished session, newest first; `--all` includes finished ones).
 2. Exactly one line: take it. Several: list them in the terminal (topic, intent, created, open/answered
-   counts) and ask which. None: say so and stop.
+   counts) and ask which. None: say so and stop. Load `grilling`, and `domain-modeling` too
+   when the session's `doc` is non-empty, as [Method](#method-matts-grilling-on-a-page) says.
 3. Read `<session>/state.json` once to load the grill (reading is fine; only writes go
    through `patch`). Run `node $SKILL/server.mjs pending --session <session>`. Every line
    printed is a Send the user made while no agent was listening. Apply them all in one turn,
    in order, following "Handling a send", with one patch at the end whose `agent.handled`
    is the last seq.
-4. Continue with Start steps 3–5. `serve` retries the port it used last time, so a tab the user
+4. Continue with Start steps 4–6. `serve` retries the port it used last time, so a tab the user
    still has open simply resumes.
 
 ## The event rule (this overrides the Monitor tool's own notice)
@@ -149,6 +172,11 @@ Any other monitor line (`"type":"ready"`, errors, exit) is status. Do not treat 
 A second wake-up is the completion notice of a draw subagent you launched in the background
 (see Visualize). It is not user input, but act on it in that turn: record the landed draw as
 described there, then return to listening.
+
+A third is the report of a fact-finding sub-agent that `grilling` had you dispatch. It is not
+user input either. In that turn, patch in the frontier questions that were waiting on it
+(next round number, its finding stated in their `body`), clear any `note` you set about it,
+and return to listening. Leave `agent.handled` as it is: there was no send.
 
 ## Handling a send
 
@@ -187,10 +215,15 @@ described there, then return to listening.
 3. If an answer changes the recommendation of a still-open question, give that question its
    new `rec` and `updated: true` (the page marks it). Set `updated: false` once the user
    answers it.
-4. Add the next round: the frontier (see Interview method), up to three when independent,
-   each a new question entry with `deps` listing the question ids it depends on. New
-   questions get the next round number. If the tree is fully walked, add no questions and
+4. Add the next round: recompute the frontier as `grilling` says and publish all of it, each
+   a new question entry with `deps` listing the question ids it depends on. New questions get
+   the next round number. Questions waiting on a fact-finding sub-agent are not in it yet;
+   set `note` to say what is being looked up. If the frontier is empty, add no questions and
    set `note` to a short sentence saying every branch is settled and Finish is the next step.
+   With `domain-modeling` loaded, do its work in this same step, inline, as it says: write
+   `GLOSSARY.md` the moment a term settles (and patch the same term into `terms`), challenge
+   a conflicting or fuzzy term in your thread reply or as a new question, and offer an ADR
+   as described under [Questions on the page](#questions-on-the-page).
 5. **Ordinary turns do not redraw the visual.** When an answer, reopen, or changed
    recommendation affects what an existing visual shows, set `"visual": { "stale": true }`.
    Leave `visual.html`, `version`, `at`, and `note` unchanged; the page marks it out of date
@@ -208,31 +241,33 @@ described there, then return to listening.
    `grill: handled send #3 (Q2 → B, Q4 thread); round 4 has 2 questions; visual v3 out of date`,
    and return to listening.
 
-## Interview method (frontier per round)
+## Questions on the page
 
-Interview the user relentlessly about every aspect of the topic until you share an
-understanding, walking each branch of the design tree and resolving dependencies between
-decisions in order:
+What to ask and when is `grilling`'s. This is how one of its questions is laid out on the page:
 
-- A question is asked only when its prerequisites are settled. Each round is the current
-  **frontier**: the questions that can be asked now. Ask up to three per round when they are
-  independent of each other; one when they are not. Record each question's `deps`.
+- The design tree lives in `deps`: each question lists the ids of the questions it hangs off.
+  `round` is the round it was asked in.
 - Every question has a `title`, a `body` that states what hangs on it, lettered `options`
-  (two to four), and `rec` with the recommended option and a one-paragraph `why` that names
+  (two to four), and `rec` with the recommended answer and a one-paragraph `why` that names
   the trade-off. A question with no sensible options has `options: []` and `rec.text`.
+  Word the `title` so "yes" accepts the recommendation, as `grilling` asks: the page's
+  accept is that "yes".
 - When the options do not exclude each other and the user may want any mix of them (which
   channels to support, which checks to run, which roles get access), set `multi: true` and
   recommend a set: `rec.options: ["A","C"]` instead of `rec.option`. The page lets the user
   toggle any number of options. Keep single choice whenever picking one rules out the
   others; never use `multi` to dodge a real trade-off, and never offer an "all of the above"
   option on a `multi` question.
-- If a question can be answered by exploring the codebase or the docs, explore instead of
-  asking, and mention what you found in the next question's body.
+- A fact you found instead of asking goes in the `body` of the question it informs.
 - Maintain `terms` as vocabulary settles: `term`, one-sentence `def`, and `avoid` (words
-  not to use for it). Use the terms consistently in later questions.
-- Set `durable: true` on a question whose decision passes all three gates: hard to reverse,
-  surprising without context, a real trade-off. Everything else is a routine choice.
-- Stop asking when the tree is walked. Say so with `note`; do not pad with filler questions.
+  not to use for it), the same shape as a `GLOSSARY.md` entry. Use the terms consistently in
+  later questions. With `domain-modeling` loaded, `terms` mirrors what you wrote to the
+  glossary.
+- Set `durable: true` on a question whose decision passes `domain-modeling`'s three ADR
+  gates: hard to reverse, surprising without context, a real trade-off. Everything else is a
+  routine choice. With `domain-modeling` loaded, offering the ADR is a question: once a
+  `durable` question is answered, the next round asks "Record Qn as an ADR?" (`deps` on it,
+  `rec` yes); on yes, write it in `docs/adr/` in the turn that handles that answer.
 
 ## Visualize
 
@@ -253,8 +288,7 @@ write the brief, and record the result with `patch`. The rules for the file itse
 in `$SKILL/visual-brief.md`; the subagent reads them, you do not repeat them. See
 [Subagent or inline](#subagent-or-inline) for when you draw the file yourself.
 
-Draw only for the first Visualize click, Regenerate, explicit visual feedback, or the
-Finish reconcile. A requested redraw brings the visual up to date with **all** current
+Draw only for the first Visualize click, Regenerate, or explicit visual feedback. A requested redraw brings the visual up to date with **all** current
 questions, including changes accumulated since its last version, not just the triggering
 send. Ordinary interview turns only mark an affected visual stale.
 
@@ -321,8 +355,9 @@ keeps answering and sending while the subagent draws.
 ### Subagent or inline
 
 The page has a **Use subagent** checkbox beside Visualize, checked by default. Every draw
-request carries its value as `subagent`: the `visualize` and `visual-feedback` actions, and
-the `finish` action when a visual exists. A missing `subagent` means `true` (an older page).
+request carries its value as `subagent`: the `visualize` and `visual-feedback` actions. (The
+`finish` action carries it too; Finish draws nothing, so ignore it there.) A missing
+`subagent` means `true` (an older page).
 
 - `subagent: true` → the background subagent draw above. Background draws require a
   top-level session: a subagent's own background tasks are dropped when its turn ends.
@@ -346,8 +381,8 @@ the `finish` action when a visual exists. A missing `subagent` means `true` (an 
   unchanged because the queued sends were already acknowledged.
 
 Feedback arrives as `visual-feedback` actions (see Handling a send); sending visual feedback
-explicitly requests a redraw. Answers and question discussions do not. On Finish the visual
-is reconciled with the decisions and copied next to the doc.
+explicitly requests a redraw. Answers and question discussions do not. The visual is an aid
+to the interview, like a `/prototype`, not a deliverable: Finish does not redraw or copy it.
 
 ## Terminal input
 
@@ -355,39 +390,33 @@ Text the user types in the terminal during a grill answers the current question 
 unambiguous (one open question, or the text names one): record it exactly as a page send would
 (`answer.kind: "text"`, or `"option"` when it is a letter, and `status: "answered"`), then
 continue as in "Handling a send" from step 3. Its step 6 patch leaves `agent.handled` as it is:
-there was no send. Otherwise ask which question it answers, in one line. The doc path may
-also be changed this way ("write the doc to …" → patch `"doc"`).
+there was no send. Otherwise ask which question it answers, in one line.
 
 ## Finish
 
-On a `finish` action, or when the user says finish in the terminal:
+On a `finish` action, or when the user says finish in the terminal. Pressing Finish is the
+user confirming the shared understanding `grilling` waits for. Like `grilling`, a grill
+writes no design doc: the record is this conversation, plus `GLOSSARY.md` and ADRs when
+`domain-modeling` is loaded.
 
-1. Write the design doc to `doc` (relative to the project root). It is exhaustive and
-   self-contained, in this order: a one-paragraph summary (linking the visual at
-   `docs/<slug>-visual.html` when there is one, see step 3); **Terms** (each with its
-   Avoid list); **Why** (the problem in the user's words); **Locked decisions** (every
-   `durable` question: the decision, the rejected options and why each lost); **Routine
-   choices** (every other answered question, one bullet each); **Verified facts** (anything
-   you established by exploring rather than asking, if any); **Risks**; **Deferred**
-   (deferred questions, with what would reopen them); **Open threads** (discussion points
-   that ended without a decision). Do not compress: a reader with no access to the session
-   must be able to build from it.
-2. Patch `"finished": { "doc": … }` and `"agent": { "status": "waiting" }`
-   (after a page Finish this is the send's one patch, with `handled`); the page shows the
-   finished banner and locks staging.
-3. If `state.visual` exists, it must be reconciled with every answered question before it
-   is exported. If no draw is in flight and it is not stale and nothing disagrees, copy
-   `<session>/visual.html` to `docs/<slug>-visual.html` next to the doc (same folder, same
-   slug, `-visual.html`) and add `"visual": <that path>` to `finished` (it is replaced
-   whole, so give `doc` again, or fold it into the step 2 patch). Otherwise request one
-   reconciling draw (or let the in-flight one land), return to listening, and when it lands
-   copy the file and patch `finished` with `visual` then. The reconciling draw uses the
-   `finish` action's `subagent` under [Subagent or inline](#subagent-or-inline): if no draw
-   is in flight and inline drawing is selected, draw before step 2 and export it in the same patch. An in-flight
-   draw must land first; queue any further reconciliation under those same rules.
-4. Once there is no draw in flight and the exports are complete, stop the persistent
-   Monitor with TaskStop, or stop the server as described in Wait mode.
-5. Print one line with the doc path (and the visual's). End.
+1. Handle the send's other actions first, as usual (with `domain-modeling`, that includes
+   any glossary entry or ADR they settle).
+2. Patch `"finished": {}` (with `"visual": "<session>/visual.html"` when a visual exists)
+   and `"agent": { "status": "waiting" }`; after a page Finish this is the send's one patch,
+   with `handled`. The page shows the finished banner and locks staging.
+3. Print the outcome in the terminal. The answers live on the page, and what comes next (the
+   skill that ran this grill, `/to-spec`, the implementation) reads this conversation, so
+   write the tree out here: one line per answered question, `Qn <title>: <the answer in
+   words, never just a letter>`, with the user's reason when they gave one. Then every
+   question still open, reopened, or deferred, under `Left open:`; never fill one in with
+   your recommendation, since `grilling` leaves nothing silently assumed. Then, with
+   `domain-modeling`, the glossary terms and ADRs written in this grill. Then the visual's
+   path, marked out of date if `visual.stale` is set.
+4. Stop the persistent Monitor with TaskStop, or stop the server as described in Wait mode.
+   A draw still in flight is abandoned; say so in step 3.
+5. Hand back. If another skill ran this grill (`/wayfinder`, `/triage`,
+   `/improve-codebase-architecture`, …), carry on with that skill's next step. Otherwise end
+   the turn; what to do with the result is the user's call.
 
 ## Wait mode (agents without a Monitor tool)
 
@@ -420,8 +449,8 @@ Keep this loop active in the current agent turn:
    is still active, resume it. Publishing a finished prototype is not finishing the grill.
 
 The user does not need to type "continue" in the terminal to deliver a browser Send.
-Only stop under the turn-boundary conditions above. On Finish, once the doc and any final
-visual are saved, stop the server using the verified `pid` in `<session>/server.json`.
+Only stop under the turn-boundary conditions above. On Finish, once the outcome is printed,
+stop the server using the verified `pid` in `<session>/server.json`.
 
 ## state.json
 
@@ -429,10 +458,10 @@ What each field means. You write it only through `patch`.
 
 ```jsonc
 {
-  "topic": "…", "intent": "why this grill exists, 1-2 sentences", "doc": "docs/x-design.md", "project": "/abs/path", "created": "ISO",
+  "topic": "…", "intent": "why this grill exists, 1-2 sentences", "doc": "", "project": "/abs/path", "created": "ISO",  // doc: "GLOSSARY.md" with domain-modeling, else ""
   "agent": { "status": "waiting|working", "since": "ISO", "handled": 3 },
   "note": "optional short sentence shown above the question list",
-  "finished": { "doc": "docs/x-design.md", "visual": "docs/x-visual.html", "at": "ISO" },  // only after Finish
+  "finished": { "visual": "/abs/session/visual.html", "at": "ISO" },  // only after Finish; visual only when one exists
   "visual": {                                                   // only after a visualize action
     "kind": "prototype|diagram", "version": 3, "at": "ISO",
     "note": "v3: discussion panel moved to the right per Q3",

@@ -1,11 +1,52 @@
 # grill-with-ui
 
-A skill for coding agents that moves a "grilling" design interview out of the terminal and
-onto a local browser page. The agent asks its questions as cards, each with lettered options
-and a highlighted recommendation. You answer them in any order, defer or reopen them, discuss
-any single one in its own thread without losing the rest of the session, and press one
-button, **Send to Agent**, to ship everything you staged as a single turn. At the end the
-agent writes an exhaustive design doc for the topic.
+**Matt Pocock's [`/grilling`](https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling)
+(or `/grill-with-docs`), on a browser page instead of the terminal.** That's all this fork
+is. The interview itself (the design tree, rounds of questions, the whole frontier at once,
+a recommended answer on every question, facts being the agent's job and decisions yours) is
+Matt's skill, loaded at the start of every grill and followed as written. This repo only
+changes where the questions show up and how you answer them.
+
+> [!NOTE]
+> I use this fork to wrap Matt's skills: when I grill, or when `/wayfinder`, `/triage` or
+> `/grill-with-docs` grill me, the questions land on this page. The default branch,
+> `matt-grilling`, is that version. `main` tracks
+> [jasonku09/grill-with-ui](https://github.com/jasonku09/grill-with-ui) unchanged, so
+> upstream fixes merge in cleanly. If you want Jason's original, standalone skill (with its
+> own interview method and a design doc at the end), use his repo.
+
+## Credit
+
+- **[Jason Ku](https://github.com/jasonku09)** built grill-with-ui: the page, the server,
+  the patch protocol, Explore deeper, Visualize, and everything else that makes it nice to
+  use. This is a fork of [jasonku09/grill-with-ui](https://github.com/jasonku09/grill-with-ui);
+  nearly all of the code here is his (with contributions from Stefan Walther and others),
+  and fixes are merged from it as they land.
+- **[Matt Pocock](https://github.com/mattpocock)** wrote the grilling method this fork
+  defers to, in [mattpocock/skills](https://github.com/mattpocock/skills), along with
+  `domain-modeling` (the glossary and ADRs behind `/grill-with-docs`).
+
+## What it is
+
+The agent asks its questions as cards, each with lettered options and a highlighted
+recommendation. You answer them in any order, defer or reopen them, discuss any single one
+in its own thread without losing the rest of the session, and press one button, **Send to
+Agent**, to ship everything you staged as a single turn. As in Matt's grilling, there is no
+design doc at the end: Finish means you and the agent share an understanding, and the agent
+writes the settled tree into the conversation for whatever comes next (`/to-spec`, the
+implementation, or the skill that started the grill). With `--docs` it also runs Matt's
+`domain-modeling` as it goes, writing `GLOSSARY.md` and ADRs inline, as `/grill-with-docs`
+does.
+
+What differs from the upstream skill:
+
+- `SKILL.md` loads Matt's `grilling` (and `domain-modeling` with `--docs`) instead of
+  carrying its own interview method, and asks the whole frontier each round rather than up
+  to three questions.
+- Finish writes no `docs/<topic>-design.md` and does not export the visual; it confirms the
+  shared understanding and prints the outcome in the terminal.
+- A skill that is already grilling (`/wayfinder`, `/triage`, `/grill-with-docs`, …) can hand
+  its grill to the page and carry on when you press Finish.
 
 ![A grill in progress: the recommended option accepted on one question, a question asked in
 another one's discussion thread, both shipped with one Send, the agent's reply and next round
@@ -33,10 +74,12 @@ Submissions made while the agent is not listening remain queued for resume.
 The skill is a plain [Agent Skills](https://agentskills.io) folder (`SKILL.md` plus one
 script and one page), so it installs the same way everywhere: put this folder where your
 agent looks for skills, under the name `grill-with-ui`. A symlink keeps `git pull` as the
-update path; copying the folder works too. Node 20 or newer is the only requirement.
+update path; copying the folder works too. Node 20 or newer is required, and so are
+[Matt Pocock's skills](https://github.com/mattpocock/skills) (at least `grilling`, plus
+`domain-modeling` for `--docs`): without them the skill stops and says so.
 
 ```sh
-git clone https://github.com/jasonku09/grill-with-ui ~/Projects/grill-with-ui
+git clone https://github.com/one1zero1one/grill-with-ui ~/Projects/grill-with-ui
 ln -s ~/Projects/grill-with-ui ~/.claude/skills/grill-with-ui   # Claude Code (Cursor reads it too)
 ln -s ~/Projects/grill-with-ui ~/.agents/skills/grill-with-ui   # Codex, Gemini CLI, Cursor, Copilot
 ```
@@ -72,8 +115,12 @@ What the agent needs at run time:
 In any project:
 
 ```
-/grill-with-ui <topic you want grilled>
+/grill-with-ui <topic you want grilled>          # Matt's /grilling on the page
+/grill-with-ui --docs <topic you want grilled>   # Matt's /grill-with-docs on the page
 ```
+
+Already grilling in the terminal through one of Matt's skills? Ask for the page ("grill
+with ui") and the agent moves the grill there, settled questions included.
 
 The agent prints a URL. Open it. Answer by clicking an option (the recommended one is
 outlined) or writing free text. A card marked "Pick one or more" takes any number of
@@ -109,14 +156,14 @@ grilling is done, untick **Use subagent** beside Visualize: the agent then draws
 its own turn, which is faster, at the cost of the markup landing in its context and Send
 waiting until the draw is done. The choice is remembered per grill across reloads and
 is read when the request is sent, including for staged feedback. It applies to Visualize,
-Regenerate, feedback, and Finish reconciliation when a visual exists.
-The checkbox hides when the grill is finished. Finish reconciles and copies the final
-visual next to the design doc as
-`docs/<topic>-visual.html`.
+Regenerate, and feedback. The checkbox hides when the grill is finished. The visual is an
+aid to the interview, like Matt's `/prototype`: it stays in the session folder, and Finish
+does not redraw or copy it, so press Regenerate first if you want it current.
 
 **Finish grill** sends at once (after an inline confirm), including the same pending items
-as Send; the agent writes the design doc to the path shown in the header (default
-`docs/<topic>-design.md` in your project) and stops.
+as Send. Pressing it is you confirming the shared understanding. The agent prints every
+answered question with its answer in the terminal, lists anything still open or deferred
+rather than assuming it, and stops (or hands back to the skill that started the grill).
 
 To pick up an unfinished grill, in the same project:
 
@@ -145,7 +192,7 @@ Session state lives outside your repo, so there is nothing to gitignore:
 every worktree of a repo sees the same sessions; outside git it is the working directory.
 
 In this repo: `server.mjs` (the server and CLI), `page.html` (the page), `SKILL.md` (the
-prompt the agent follows), `test/`, and `design/` + `docs/design.md` (how it was designed).
+prompt the agent follows), `test/`, and `design/` + `docs/design.md` (how upstream was designed).
 `design/record-demo.mjs` re-records the GIF above by driving the real page; it needs
 Playwright and `ffmpeg`.
 

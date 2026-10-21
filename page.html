@@ -485,7 +485,7 @@ function withThreadScroll(fn) {
 }
 function renderBanner() {
   const b = $("banner");
-  if (S && S.finished) { b.className = "show done"; b.textContent = `Finished · the design doc was written to ${S.finished.doc || S.doc || "the doc path"}${S.finished.visual ? ", the visual to " + S.finished.visual : ""}${S.finished.at ? " at " + timeOf(S.finished.at) : ""}.`; }
+  if (S && S.finished) { b.className = "show done"; b.textContent = `Finished · ${S.finished.doc ? "the design doc was written to " + S.finished.doc : "shared understanding confirmed; the outcome is in the terminal"}${S.finished.visual ? ", the visual is at " + S.finished.visual : ""}${S.finished.at ? " at " + timeOf(S.finished.at) : ""}.`; }
   else if (gone) { b.className = "show"; b.textContent = "Server gone. Resume the grill from the terminal; this tab reconnects by itself."; }
   else { b.className = ""; b.textContent = ""; }
 }
@@ -699,11 +699,11 @@ function renderFooter() {
   const fa = $("finish-area");
   if (locked()) fa.innerHTML = "";
   else if (isFinishing()) fa.innerHTML = `<button id="finish" type="button" disabled><span class="spin"></span>Finishing…</button>`;
-  else if (confirmFinish) fa.innerHTML = `<span class="confirm">Finish this grill? Everything staged goes with it; the agent writes the design doc and stops. <button id="finish-yes" class="ready" type="button">Finish grill</button><button id="finish-no" type="button">Cancel</button></span>`;
+  else if (confirmFinish) fa.innerHTML = `<span class="confirm">Finish this grill? Everything staged goes with it; this confirms you share an understanding, and the agent writes the outcome in the terminal and stops. <button id="finish-yes" class="ready" type="button">Finish grill</button><button id="finish-no" type="button">Cancel</button></span>`;
   else {
     const a = (S && S.agent) || {}; const gate = sendState(false);
     const ready = allSettled() && a.status !== "working" && !lp && !gone;
-    fa.innerHTML = `<button id="finish" type="button" class="${ready ? "ready" : ""}"${gate.disabled ? " disabled" : ""}${ready ? ` title="Every question is settled. Finish writes the design doc."` : gate.disabled && gate.why ? ` title="${esc(gate.why)}"` : ""}>Finish grill</button>`;
+    fa.innerHTML = `<button id="finish" type="button" class="${ready ? "ready" : ""}"${gate.disabled ? " disabled" : ""}${ready ? ` title="Every question is settled. Finish confirms the shared understanding."` : gate.disabled && gate.why ? ` title="${esc(gate.why)}"` : ""}>Finish grill</button>`;
   }
   const f = $("finish"); if (f && !f.disabled) f.onclick = () => { confirmFinish = true; render(); };
   const fy = $("finish-yes"); if (fy) fy.onclick = finishNow;
