@@ -9,7 +9,10 @@ changes where the questions show up and how you answer them.
 
 > [!NOTE]
 > I use this fork to wrap Matt's skills: when I grill, or when `/wayfinder`, `/triage` or
-> `/grill-with-docs` grill me, the questions land on this page. The default branch,
+> `/grill-with-docs` grill me, the agent offers this page and the questions move here. (Matt's
+> skills call `grilling` directly, so the offer comes from one line in my `~/.claude/CLAUDE.md`:
+> *when a skill runs Matt's `grilling`, offer to run it on the `grill-with-ui` page*. Without
+> it, say "grill with ui" mid-grill.) The default branch,
 > `matt-grilling`, is that version. `main` tracks
 > [jasonku09/grill-with-ui](https://github.com/jasonku09/grill-with-ui) unchanged, so
 > upstream fixes merge in cleanly. If you want Jason's original, standalone skill (with its
@@ -29,24 +32,39 @@ changes where the questions show up and how you answer them.
 ## What it is
 
 The agent asks its questions as cards, each with lettered options and a highlighted
-recommendation. You answer them in any order, defer or reopen them, discuss any single one
-in its own thread without losing the rest of the session, and press one button, **Send to
-Agent**, to ship everything you staged as a single turn. As in Matt's grilling, there is no
+recommendation. You answer a round's questions in any order, reopen them, discuss any single
+one in its own thread without losing the rest of the session, and press one button, **Send to
+Agent**, to ship everything you staged as a single turn. As in Matt's terminal flow, a round
+is answered together: Send waits until every open question has an answer, except that
+discussion (a "why?", pushback, visual feedback) goes at any time. As in Matt's grilling, there is no
 design doc at the end: Finish means you and the agent share an understanding, and the agent
 writes the settled tree into the conversation for whatever comes next (`/to-spec`, the
 implementation, or the skill that started the grill). With `--docs` it also runs Matt's
 `domain-modeling` as it goes, writing `GLOSSARY.md` and ADRs inline, as `/grill-with-docs`
 does.
 
-What differs from the upstream skill:
+## How this fork follows Matt's flow
 
-- `SKILL.md` loads Matt's `grilling` (and `domain-modeling` with `--docs`) instead of
-  carrying its own interview method, and asks the whole frontier each round rather than up
-  to three questions.
-- Finish writes no `docs/<topic>-design.md` and does not export the visual; it confirms the
-  shared understanding and prints the outcome in the terminal.
-- A skill that is already grilling (`/wayfinder`, `/triage`, `/grill-with-docs`, …) can hand
-  its grill to the page and carry on when you press Finish.
+Each change from the upstream skill traces back to a rule in Matt's
+[`grilling`](https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling) or
+[`domain-modeling`](https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling):
+
+| Matt's rule | What the page does here | Upstream did |
+|---|---|---|
+| The method lives in `grilling` | `SKILL.md` loads Matt's skill at the start of every grill and follows it; it keeps only the page mechanics | Its own copy of the method |
+| Ask the whole frontier in one round | Every question you can answer now is on the page at once | Up to three per round |
+| Wait for the answers before the next round | **Send to Agent** stays gray until every open question in the round has an answer; the next round comes after | Send any subset, any time |
+| Pushing back or asking "why?" is part of the interview | Discussion is the exception: a thread message, visual feedback or a reopen sends at once, and the agent may reword or re-recommend open questions in reply | Same, but tied to partial sends |
+| Nothing left silently assumed | No **Defer** button; **Finish** stays gray until every question is answered | Defer, and Finish at any time |
+| Done when the frontier is empty, and only once you confirm a shared understanding | The last round is one question, "Is this our shared understanding?", listing every decision; answering it opens Finish | Finish wrote a design doc |
+| No artifact of its own: the conversation is the record | Finish writes no `docs/<topic>-design.md` and exports no visual; it prints every decision in the terminal for `/to-spec`, the implementation, or the calling skill | Design doc and visual copied into `docs/` |
+| `/grill-with-docs` = `grilling` + `domain-modeling` | `--docs` writes `GLOSSARY.md` the moment a term settles and offers an ADR (as a question) when a decision passes all three gates | Terms only on the page |
+| Facts are the agent's job, decisions are yours | The agent sends fact-finding to a sub-agent and asks the rest of the frontier meanwhile; the questions that needed the fact follow | Agent explored inline |
+| `grilling` is a primitive other skills run | When `/wayfinder`, `/triage` or `/improve-codebase-architecture` grill, the page takes the grill (one session per grill, with that skill's purpose) and hands back at Finish | Standalone only |
+
+Explore deeper (a pros and cons table) and Visualize (a prototype or diagram) are Jason's
+additions with no counterpart in Matt's skill. They help you decide; they never decide for
+you. A visual note that contradicts an answer reopens the question rather than changing it.
 
 ![A grill in progress: the recommended option accepted on one question, a question asked in
 another one's discussion thread, both shipped with one Send, the agent's reply and next round
@@ -124,11 +142,14 @@ with ui") and the agent moves the grill there, settled questions included.
 
 The agent prints a URL. Open it. Answer by clicking an option (the recommended one is
 outlined) or writing free text. A card marked "Pick one or more" takes any number of
-options, and each click toggles one. Start a discussion in the right-hand panel; use **Defer** and **Reopen** on a card when
-you want to. Staged actions and typed drafts survive a reload. **Send N to Agent** (⌘↩)
+options, and each click toggles one. Start a discussion in the right-hand panel; use **Reopen** on an answered card when
+you want to change it. Staged actions and typed drafts survive a reload. **Send N to Agent** (⌘↩)
 ships staged actions together with text left in any question's discussion or the visual
 feedback box, including questions you navigated away from. These notes count toward the
-Send total and can enable Send on their own; sending clears their boxes. A free-text answer
+Send total and can enable Send on their own; sending clears their boxes. Without one, Send
+stays disabled until every open question has an answer staged, and the footer names the
+ones left. The agent replies to discussion right away, and may reword or re-recommend open
+questions in response, but holds the next round until the current one is answered. A free-text answer
 is sent only once staged (**Stage text**, or ⌘↩ in its box): until then it stays in its box,
 does not count toward Send, and the footer names the question in a warning. If sending fails, carried notes remain
 staged and removable. **Explore deeper** next to a question's title goes to
@@ -160,10 +181,13 @@ Regenerate, and feedback. The checkbox hides when the grill is finished. The vis
 aid to the interview, like Matt's `/prototype`: it stays in the session folder, and Finish
 does not redraw or copy it, so press Regenerate first if you want it current.
 
-**Finish grill** sends at once (after an inline confirm), including the same pending items
-as Send. Pressing it is you confirming the shared understanding. The agent prints every
-answered question with its answer in the terminal, lists anything still open or deferred
-rather than assuming it, and stops (or hands back to the skill that started the grill).
+When every branch is settled, the last round is a single question, "Is this our shared
+understanding?", listing each decision. **Finish grill** opens once every question is
+answered, and sends at once (after an inline confirm), including the same pending items as
+Send. Pressing it is you confirming the shared understanding. The agent prints every
+answered question with its answer in the terminal and stops (or hands back to the skill that
+started the grill). Typing "finish" in the terminal earlier ends the grill early; the agent
+says so and lists what was left open rather than assuming it.
 
 To pick up an unfinished grill, in the same project:
 
@@ -199,7 +223,7 @@ Playwright and `ffmpeg`.
 ## Server commands
 
 ```
-node server.mjs new      --topic T [--doc P]                  create a session, print its folder
+node server.mjs new      --topic T [--intent I] [--doc P]     create a session, print its folder
 node server.mjs serve    --session DIR [--port N]             serve the page; print one line per Send
 node server.mjs sessions [--all]                               list this project's sessions
 node server.mjs pending  --session DIR                         print sends past agent.handled

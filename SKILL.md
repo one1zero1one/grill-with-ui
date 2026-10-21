@@ -16,7 +16,7 @@ answers, facts being your job and decisions the user's, when the session is done
 that skill, not from this file. Before anything else, call the Skill tool with `"grilling"`
 (no Skill tool: read `grilling/SKILL.md` from the agent's skills folder) and follow it. With
 `--docs`, or when the conversation already loaded `domain-modeling` (`/grill-with-docs`,
-`/triage`, `/wayfinder` do), also call the Skill tool with `"domain-modeling"` and follow it
+`/triage`, `/wayfinder`, `/improve-codebase-architecture` do), also call the Skill tool with `"domain-modeling"` and follow it
 too: that is `/grill-with-docs` on the page. If `grilling` is not installed, say so, point
 to https://github.com/mattpocock/skills, and stop.
 
@@ -24,6 +24,13 @@ Where this file and `grilling` meet, `grilling` wins on method and this file win
 mechanics. The only thing of `grilling` this skill replaces is the shape of a round: a round
 is published to the page with `patch` (see [Questions on the page](#questions-on-the-page)),
 not printed in the terminal, and the user answers by Send, not by typing a reply.
+
+The page keeps `grilling`'s rhythm. **Send to Agent** stays disabled until every open question
+has an answer picked, so a round is answered together. The one exception is discussion: a
+thread message, visual feedback, or a reopen goes at once, the way the user would push back
+or ask "why?" in the terminal, and any answers picked so far go with it. **Finish** stays
+disabled until every question is answered. There is no defer: `grilling` leaves nothing
+silently assumed.
 
 Two files carry a grill. `state.json` is **yours alone**: questions, recommendations, thread
 replies, statuses, agent status. `events.jsonl` is **the page's alone**: one line per Send.
@@ -45,7 +52,7 @@ Choose the mode from the tools actually available, not the agent's model name:
   question round or visual is ready. A timeout means wait again, not end the interview.
 
 Throughout this skill, **return to listening** means the appropriate action above. In wait
-mode stop only after Finish and any final visual export are complete, the user explicitly
+mode stop only after Finish is complete, the user explicitly
 pauses/stops the interview, or a tool failure prevents continuing. If you must stop, say that
 the listener is inactive and that browser submissions will be queued until resume; never
 claim you are still listening. On resume, drain `pending` as Resume step 3 describes before
@@ -119,7 +126,11 @@ GRILL_PATCH
 
 When another skill is already grilling and the user wants the page, the topic and intent come
 from that skill's grilling so far; questions already settled in the terminal go into round 1
-as answered questions, so the page starts from the same tree.
+as answered questions, so the page starts from the same tree. Each grill a calling skill runs
+is its own session: when `/wayfinder` grills to name the destination and then again
+breadth-first, that is two `new`s, each with the calling skill's purpose for it in `--intent`
+("name the destination", "breadth-first: fan out across the whole space"), and that purpose
+shapes the frontier as the calling skill says.
 
 1. Load `grilling` (and `domain-modeling` when it applies), as [Method](#method-matts-grilling-on-a-page) says.
 2. From the project directory run
@@ -128,8 +139,10 @@ as answered questions, so the page starts from the same tree.
    message that started this grill. The topic is the title; the intent is the why. Omit it
    only when the topic arrived as a bare phrase with no goal attached. The page shows it under
    the topic so several open grills stay distinguishable. A grill writes no design doc, so
-   `--doc` marks the mode instead: with `domain-modeling` loaded pass `--doc GLOSSARY.md`
-   (the page header then shows where the record goes, and Resume knows to load it again);
+   `--doc` marks the mode instead: with `domain-modeling` loaded pass `--doc` with the glossary
+   this grill writes to (`GLOSSARY.md`, or the context's glossary when a `GLOSSARY-MAP.md`
+   lists several), so the page header shows where the record goes and Resume knows to load
+   `domain-modeling` again;
    otherwise give no `--doc`. It prints one JSON line; keep `session` (the session folder).
 3. Patch round 1 in (`new` already wrote the skeleton): the whole frontier, as `grilling`
    defines it, laid out as in [Questions on the page](#questions-on-the-page), plus any `terms`
@@ -137,7 +150,7 @@ as answered questions, so the page starts from the same tree.
 4. Open a **persistent Monitor** (`persistent: true`) whose command is
    `node $SKILL/server.mjs serve --session <session>`, description `grill page: <topic>`.
    No Monitor tool in your harness (Codex, Gemini CLI, Cursor, Copilot, others)? Use
-   "Wait mode" at the end of this file for this step and for every wait after it.
+   "Wait mode" below for this step and for every wait after it.
 5. Run `node $SKILL/server.mjs url --session <session>`; it prints the URL.
 6. Print ONE line: the URL and how many questions wait. Return to listening.
 
@@ -174,8 +187,9 @@ A second wake-up is the completion notice of a draw subagent you launched in the
 described there, then return to listening.
 
 A third is the report of a fact-finding sub-agent that `grilling` had you dispatch. It is not
-user input either. In that turn, patch in the frontier questions that were waiting on it
-(next round number, its finding stated in their `body`), clear any `note` you set about it,
+user input either. In that turn, patch in the frontier questions that were waiting on it (the
+current round number while that round still has open questions, else the next; its finding
+stated in their `body`), clear any `note` you set about it,
 and return to listening. Leave `agent.handled` as it is: there was no send.
 
 ## Handling a send
@@ -192,7 +206,8 @@ and return to listening. Leave `agent.handled` as it is: there was no send.
      `{who:"user", text, at}` (the send's `at`), then your reply `{who:"agent", text}`.
      Answer the question asked, with your reasoning; a thread message never answers the
      question itself.
-   - `defer` → `status: "deferred"`. `reopen` → `status: "reopened"`, `answer: null`.
+   - `reopen` → `status: "reopened"`, `answer: null`. (`defer` comes only from an older page:
+     treat it as a thread note that the user is not ready to decide; the question stays open.)
    - `explore` → set the question's `explore`: `{ rows: [{ option, pros: [...], cons: [...] }] }`,
      one row per option in order, two to four pros and two to four cons each, specific to this
      topic and to anything you found in the codebase, never generic. Be as honest about the
@@ -215,11 +230,20 @@ and return to listening. Leave `agent.handled` as it is: there was no send.
 3. If an answer changes the recommendation of a still-open question, give that question its
    new `rec` and `updated: true` (the page marks it). Set `updated: false` once the user
    answers it.
-4. Add the next round: recompute the frontier as `grilling` says and publish all of it, each
-   a new question entry with `deps` listing the question ids it depends on. New questions get
-   the next round number. Questions waiting on a fact-finding sub-agent are not in it yet;
-   set `note` to say what is being looked up. If the frontier is empty, add no questions and
-   set `note` to a short sentence saying every branch is settled and Finish is the next step.
+4. **Hold the round** while any question on the page is still open or reopened: a send that
+   carries discussion (with some answers or none) gets its thread replies and answers
+   recorded, and pushback may reword an open question or change its `rec` (`updated: true`),
+   but no new round. Once nothing is open, add the next round: recompute the frontier as
+   `grilling` says and publish all of it, each a new question entry with `deps` listing the
+   question ids it depends on and the next round number. Questions waiting on a
+   fact-finding sub-agent are not in it yet; set `note` to say what is being looked up.
+   **When the frontier is empty**, the last round is one closing question, `grilling`'s
+   confirmation of a shared understanding: title "Is this our shared understanding?", a
+   `body` with one line per settled decision (`Qn <title>: <the answer in words>`),
+   options `A` yes and `B` no, something is off (say what in the discussion), and `rec` A.
+   Set `note` to say Finish opens once it is answered. A `B` or text answer means the tree
+   is not done: reopen or add the questions it points at, and ask the closing question again
+   when they are settled.
    With `domain-modeling` loaded, do its work in this same step, inline, as it says: write
    `GLOSSARY.md` the moment a term settles (and patch the same term into `terms`), challenge
    a conflicting or fuzzy term in your thread reply or as a new question, and offer an ADR
@@ -229,7 +253,7 @@ and return to listening. Leave `agent.handled` as it is: there was no send.
    Leave `visual.html`, `version`, `at`, and `note` unchanged; the page marks it out of date
    and the user can click **Regenerate** when ready. Do not launch a draw subagent merely
    because the next round is ready. Explicit `visualize` and `visual-feedback` actions
-   still request a draw, and Finish still reconciles the exported visual.
+   still request a draw.
 6. Send everything from steps 2–5 **in ONE patch**, together with
    `"agent": { "status": "waiting", "handled": <seq of this send> }`
    (the example under "Patching state.json" is this patch). One patch is one atomic swap,
@@ -356,7 +380,7 @@ keeps answering and sending while the subagent draws.
 
 The page has a **Use subagent** checkbox beside Visualize, checked by default. Every draw
 request carries its value as `subagent`: the `visualize` and `visual-feedback` actions. (The
-`finish` action carries it too; Finish draws nothing, so ignore it there.) A missing
+`finish` action may carry it too; Finish draws nothing, so ignore it there.) A missing
 `subagent` means `true` (an older page).
 
 - `subagent: true` → the background subagent draw above. Background draws require a
@@ -394,8 +418,10 @@ there was no send. Otherwise ask which question it answers, in one line.
 
 ## Finish
 
-On a `finish` action, or when the user says finish in the terminal. Pressing Finish is the
-user confirming the shared understanding `grilling` waits for. Like `grilling`, a grill
+On a `finish` action, or when the user says finish in the terminal. The page enables Finish
+only once every question is answered, the closing question included, so a page Finish is the
+user confirming the shared understanding `grilling` waits for. A terminal "finish" with
+questions still open is the user ending early: do it, but say so (step 3). Like `grilling`, a grill
 writes no design doc: the record is this conversation, plus `GLOSSARY.md` and ADRs when
 `domain-modeling` is loaded.
 
@@ -407,16 +433,18 @@ writes no design doc: the record is this conversation, plus `GLOSSARY.md` and AD
 3. Print the outcome in the terminal. The answers live on the page, and what comes next (the
    skill that ran this grill, `/to-spec`, the implementation) reads this conversation, so
    write the tree out here: one line per answered question, `Qn <title>: <the answer in
-   words, never just a letter>`, with the user's reason when they gave one. Then every
-   question still open, reopened, or deferred, under `Left open:`; never fill one in with
-   your recommendation, since `grilling` leaves nothing silently assumed. Then, with
+   words, never just a letter>`, with the user's reason when they gave one. If any question
+   is still open or reopened, start with `Ended early: N questions open` and list them under
+   `Left open:`; never fill one in with your recommendation, since `grilling` leaves nothing
+   silently assumed. Then, with
    `domain-modeling`, the glossary terms and ADRs written in this grill. Then the visual's
    path, marked out of date if `visual.stale` is set.
 4. Stop the persistent Monitor with TaskStop, or stop the server as described in Wait mode.
    A draw still in flight is abandoned; say so in step 3.
 5. Hand back. If another skill ran this grill (`/wayfinder`, `/triage`,
-   `/improve-codebase-architecture`, …), carry on with that skill's next step. Otherwise end
-   the turn; what to do with the result is the user's call.
+   `/improve-codebase-architecture`, …), carry on with that skill's next step; after an early
+   end, tell it the grill is not settled (for `/wayfinder`, the ticket is not resolved).
+   Otherwise end the turn; what to do with the result is the user's call.
 
 ## Wait mode (agents without a Monitor tool)
 
@@ -476,7 +504,7 @@ What each field means. You write it only through `patch`.
     "options": [{ "k": "A", "text": "…" }],
     "multi": false,                                             // true: any number of options may be picked
     "rec": { "option": "A", "why": "…" },                       // or { "text": "…", "why": "…" }; multi: { "options": ["A","C"], "why": "…" }
-    "status": "open|answered|deferred|reopened", "durable": false, "updated": false,
+    "status": "open|answered|reopened", "durable": false, "updated": false,  // status "deferred": older sessions only, treat as open
     "answer": { "kind": "accept|option|text", "option": "A", "text": "…" },  // multi: { "kind": "accept|option", "options": ["A","C"] }
     "explore": { "at": "ISO", "rows": [{ "option": "A", "pros": ["…"], "cons": ["…"] }] },  // after an explore action
     "thread": [{ "who": "user|agent", "text": "…", "at": "ISO" }]
@@ -491,7 +519,7 @@ Send lines (`events.jsonl`, also printed by `serve`):
   { "q": "q15", "type": "answer", "kind": "accept|option|text", "option": "A", "text": "…" },
   { "q": "q16", "type": "answer", "kind": "accept|option", "options": ["A", "C"] },  // a multi question
   { "q": "q8",  "type": "thread", "text": "…" },
-  { "q": "q17", "type": "defer" }, { "q": "q3", "type": "reopen" }, { "q": "q9", "type": "explore" },
+  { "q": "q3", "type": "reopen" }, { "q": "q9", "type": "explore" },
   { "type": "visualize", "subagent": true }, { "type": "visual-feedback", "text": "…", "subagent": true },
   { "type": "finish", "subagent": true } ] }   // subagent: the page's Use subagent checkbox; absent means true
 ```

@@ -87,6 +87,10 @@ try {
     }
     await page.locator("#use-subagent").setChecked(subagent);
     await draw(await send("#send", ["Use a narrower list", "Keep the title visible"].map((text) => ({ type: "visual-feedback", text, subagent }))));
+    // Finish opens only once every question is answered.
+    assert.equal(await page.locator("#finish").isDisabled(), true, "finish waits while q1 is open");
+    patch({ questions: [{ id: "q1", status: "answered", answer: { kind: "text", text: "Use the default" } }] });
+    await page.locator("#finish:not([disabled])").waitFor();
     await page.locator("#finish").click();
     const seq = await send("#finish-yes", [{ type: "finish", subagent }]);
     await draw(seq);

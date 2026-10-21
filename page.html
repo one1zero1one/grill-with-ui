@@ -283,7 +283,7 @@ function save() { try { localStorage.setItem(storeKey, JSON.stringify(local)); }
 // ---- data helpers ----
 const qs = () => (S && Array.isArray(S.questions) ? S.questions : []);
 const byId = (id) => qs().find((q) => q.id === id);
-const isOpen = (q) => q.status === "open" || q.status === "reopened";
+const isOpen = (q) => q.status === "open" || q.status === "reopened" || q.status === "deferred"; // deferred: older sessions only
 const curRound = () => qs().reduce((m, q) => Math.max(m, Number(q.round) || 0), 0);
 const rounds = () => { const m = new Map(); for (const q of qs()) { const r = Number(q.round) || 0; if (!m.has(r)) m.set(r, []); m.get(r).push(q); } return [...m.entries()].sort((a, b) => a[0] - b[0]); };
 const firstOpen = () => qs().filter((q) => isOpen(q) && Number(q.round) === curRound())[0] || qs().find(isOpen) || qs()[qs().length - 1] || null;
@@ -350,7 +350,6 @@ function stageKeys(q, keys) {
   stageAnswer(q.id, { kind: sameKeys(sorted, recKeys(q)) ? "accept" : "option", options: sorted });
 }
 function stageThread(id, text) { const s = st(id); (s.thread = s.thread || []).push(text); if (local.drafts[id]) delete local.drafts[id].thread; commit(); }
-function stageDefer(id) { const s = st(id); s.defer = true; delete s.answer; delete s.reopen; commit(); }
 function stageReopen(id) { const s = st(id); s.reopen = true; delete s.answer; delete s.defer; commit(); }
 function clearStaged(id) { const s = local.staged[id]; if (s) { delete s.answer; delete s.defer; delete s.reopen; prune(id); } commit(); }
 function removeThread(id, i) { const s = local.staged[id]; if (s && s.thread) { s.thread.splice(i, 1); prune(id); } commit(); }
@@ -367,6 +366,13 @@ const isVisualizing = () => pendingOfType("visualize").length > 0 || (!!drawing(
 const useSubagent = () => local.subagent !== false;
 const isFinishing = () => pendingOfType("finish").length > 0;
 const allSettled = () => qs().length > 0 && !qs().some(isOpen);
+// Matt's grilling answers a round together, so Send waits until every open question has an
+// answer staged. Discussion is the exception: a thread message, visual feedback or a reopen
+// is pushback, and goes at once, as a "why?" would in the terminal. Finish waits for every
+// question to be answered: the frontier is empty, nothing silently assumed.
+const unanswered = () => qs().filter((q) => isOpen(q) && !(local.staged[q.id] && local.staged[q.id].answer));
+const hasDiscussion = () => local.vfeedback.length > 0 || typedNotes().length > 0 || Object.values(local.staged).some((s) => s.reopen || (s.thread && s.thread.length));
+const waitingOn = () => { const ids = unanswered().map((q) => q.id.toUpperCase()); return ids.length ? `Answer ${ids.length > 3 ? ids.length + " open questions" : ids.join(", ")} first, or add to a discussion.` : ""; };
 function stagedCount() {
   let n = local.vfeedback.length + typedNotes().length;
   for (const s of Object.values(local.staged)) n += (s.answer ? 1 : 0) + (s.defer ? 1 : 0) + (s.reopen ? 1 : 0) + (s.thread ? s.thread.length : 0);
@@ -405,6 +411,7 @@ function sendState(needStaged = true) {
   if (locked()) return { disabled: true, why: "" };
   if (gone) return { disabled: true, why: "server gone" };
   if (needStaged && !stagedCount()) return { disabled: true, why: "" };
+  if (needStaged && !hasDiscussion() && unanswered().length) return { disabled: true, why: waitingOn() };
   if (a.status === "working") {
     const ms = Date.now() - Date.parse(a.since || 0);
     if (!(ms > WORKING_GRACE_MS)) return { disabled: true, why: "" };
@@ -433,7 +440,7 @@ async function send() {
 }
 // Finish is not staged: confirming ships everything staged plus the finish action in one event, right away.
 async function finishNow() {
-  if (sendState(false).disabled || isFinishing()) return;
+  if (sendState(false).disabled || isFinishing() || unanswered().length) return;
   carryTyped();
   const actions = buildActions().concat([visual() ? { type: "finish", subagent: useSubagent() } : { type: "finish" }]);
   const j = await post(actions);
@@ -612,7 +619,7 @@ function renderMain() {
         <textarea id="free" placeholder="${q.status === "answered" ? "Change your answer, or add nuance…" : (q.options || []).length ? "Free-text answer, if none of the options fit…" : "Your answer…"}">${esc(d.free || "")}</textarea>
         <button id="stage-text" type="button" title="Stage text (⌘↩)">Stage text</button>
       </div>
-      <div class="links">${isMulti(q) && recKeys(q).length > 1 ? `<a href="#" id="accept-rec">Accept the recommended ${esc(keyLabel(rec))}</a>` : ""}${isOpen(q) ? `<a href="#" id="defer">Defer this question</a>` : `<a href="#" id="reopen">Reopen this question</a>`}</div>`;
+      <div class="links">${isMulti(q) && recKeys(q).length > 1 ? `<a href="#" id="accept-rec">Accept the recommended ${esc(keyLabel(rec))}</a>` : ""}${isOpen(q) ? "" : `<a href="#" id="reopen">Reopen this question</a>`}</div>`;
   const exploring = isExploring(q.id);
   const gate = sendState(false);
   const exploreBtn = (q.options || []).length && !lk
@@ -634,7 +641,6 @@ function renderMain() {
   $("stage-text").onclick = () => { const t = $("free").value.trim(); if (t) { (local.drafts[q.id] = local.drafts[q.id] || {}).free = ""; stageAnswer(q.id, { kind: "text", text: t }); } };
   $("free").oninput = (e) => { (local.drafts[q.id] = local.drafts[q.id] || {}).free = e.target.value; save(); renderFooter(); };
   const cl = $("clear-staged"); if (cl) cl.onclick = (e) => { e.preventDefault(); clearStaged(q.id); };
-  const df = $("defer"); if (df) df.onclick = (e) => { e.preventDefault(); stageDefer(q.id); };
   const ro = $("reopen"); if (ro) ro.onclick = (e) => { e.preventDefault(); stageReopen(q.id); };
 }
 function renderAside() {
@@ -702,8 +708,10 @@ function renderFooter() {
   else if (confirmFinish) fa.innerHTML = `<span class="confirm">Finish this grill? Everything staged goes with it; this confirms you share an understanding, and the agent writes the outcome in the terminal and stops. <button id="finish-yes" class="ready" type="button">Finish grill</button><button id="finish-no" type="button">Cancel</button></span>`;
   else {
     const a = (S && S.agent) || {}; const gate = sendState(false);
-    const ready = allSettled() && a.status !== "working" && !lp && !gone;
-    fa.innerHTML = `<button id="finish" type="button" class="${ready ? "ready" : ""}"${gate.disabled ? " disabled" : ""}${ready ? ` title="Every question is settled. Finish confirms the shared understanding."` : gate.disabled && gate.why ? ` title="${esc(gate.why)}"` : ""}>Finish grill</button>`;
+    const open = unanswered().length > 0;
+    const ready = !open && qs().length > 0 && a.status !== "working" && !lp && !gone;
+    const title = ready ? "Every question is answered. Finish confirms the shared understanding." : open ? "Finish opens once every question is answered." : gate.why;
+    fa.innerHTML = `<button id="finish" type="button" class="${ready ? "ready" : ""}"${gate.disabled || !ready ? " disabled" : ""}${title ? ` title="${esc(title)}"` : ""}>Finish grill</button>`;
   }
   const f = $("finish"); if (f && !f.disabled) f.onclick = () => { confirmFinish = true; render(); };
   const fy = $("finish-yes"); if (fy) fy.onclick = finishNow;

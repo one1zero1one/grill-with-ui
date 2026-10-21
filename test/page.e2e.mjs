@@ -190,11 +190,31 @@ try {
   await page.locator("#clear-staged").click();
   check("clear removes the staged reopen", await page.locator(".staged-line").count() === 0);
 
-  // defer on q4 (free-text question, no options)
+  // q4 (free-text question, no options); no defer in Matt's grilling
   await page.locator(".item", { hasText: "Q4" }).click();
   check("free-text question has no option list", await page.locator(".opt").count() === 0);
   check("free-text question shows suggested text", (await page.locator(".why").textContent()).includes("Suggested."));
-  await page.locator("#defer").click();
+  check("no defer link on an open question", await page.locator("#defer").count() === 0 && (await page.locator(".links").textContent()).trim() === "");
+  // a stored "deferred" status (older sessions) is just an open question: no Reopen, answer it like any other
+  await page.locator(".item", { hasText: "Q2" }).click();
+  check("deferred fixture q2 reads as open: no Reopen or Defer link, answer box offered", await page.locator("#reopen").count() === 0 && await page.locator("#defer").count() === 0 && await page.locator("#free").count() === 1 && await page.locator(".opt").count() === 1);
+  // Send gate: partial answers need a discussion to go; a full round of answers goes alone.
+  await page.locator(".item", { hasText: "Q3" }).click();
+  await page.locator("aside .msg.staged [data-rm]").click();
+  check("gate: partial answers with no discussion disable Send and name the unanswered (deferred q2 included)", await page.locator("#send").isDisabled() && (await page.locator("#send").textContent()) === "Send 1 to Agent" && (await page.locator("#send-why").textContent()) === "Answer Q2, Q4 first, or add to a discussion.", await page.locator("#send-why").textContent());
+  await page.locator(".item", { hasText: "Q4" }).click();
+  await page.locator("#free").fill("Short and sweet");
+  await page.locator("#stage-text").click();
+  check("gate: the reason narrows as answers are staged", await page.locator("#send").isDisabled() && (await page.locator("#send-why").textContent()) === "Answer Q2 first, or add to a discussion.", await page.locator("#send-why").textContent());
+  await page.locator(".item", { hasText: "Q2" }).click();
+  await page.locator(".opt[data-opt='A']").click();
+  check("gate: Send enabled once every open question has a staged answer", await page.locator("#send").isEnabled() && (await page.locator("#send").textContent()) === "Send 3 to Agent" && (await page.locator("#send-why").textContent()) === "");
+  await page.locator("#clear-staged").click();
+  check("gate: unstaging one answer disables Send again", await page.locator("#send").isDisabled());
+  await page.locator(".item", { hasText: "Q3" }).click();
+  await page.locator("#thread-in").fill("Would Alpha be simpler?");
+  await page.locator("#stage-thread").click();
+  check("gate: partial answers plus one thread message enable Send", await page.locator("#send").isEnabled() && (await page.locator("#send-why").textContent()) === "");
   check("send label counts 3", (await page.locator("#send").textContent()) === "Send 3 to Agent");
 
   check("header has a Visualize button before any visual exists", await page.locator("header #visualize").count() === 1 && (await page.locator("#visualize").textContent()) === "Visualize" && await page.locator("body.visualize").count() === 0);
@@ -268,19 +288,20 @@ try {
   const ev = JSON.parse(await srv.nth(3));
   check("events.jsonl line has 3 actions", ev.seq === 2 && ev.actions.length === 3, JSON.stringify(ev.actions));
   const kinds = ev.actions.map((a) => `${a.q}:${a.type}${a.kind ? ":" + a.kind : ""}${a.option ? ":" + a.option : ""}`).sort();
-  check("action shapes", JSON.stringify(kinds) === JSON.stringify(["q3:answer:accept:B", "q3:thread", "q4:defer"]), JSON.stringify(kinds));
+  check("action shapes", JSON.stringify(kinds) === JSON.stringify(["q3:answer:accept:B", "q3:thread", "q4:answer:text"]), JSON.stringify(kinds));
   check("staging cleared after send", (await page.locator("#send").textContent()) === "Send to Agent");
   check("staged-list shows sent note", (await page.locator("#staged-list").textContent()).includes("Sent #2 · waiting for the agent"));
   check("file lines equal stdout lines", readFileSync(join(session, "events.jsonl"), "utf8").trim().split("\n").join("|") === [srv.lines[1], srv.lines[2]].join("|"));
 
   // pending indicators: the sent-but-unhandled work stays visible until the agent records it
   check("sidebar shows pending marks for the sent questions, not 'open'", await page.locator(".item", { hasText: "Q3" }).locator(".mark.pending .spin").count() === 1 && await page.locator(".item", { hasText: "Q4" }).locator(".mark.pending .spin").count() === 1 && await page.locator(".item", { hasText: "Q1" }).locator(".mark.pending").count() === 0);
-  check("pending defer shown on the q4 card", (await page.locator(".pending-line").textContent()).includes("defer"));
+  check("pending text answer shown on the q4 card", (await page.locator(".opt.pending.text-answer").textContent()).includes("Short and sweet"));
   await page.locator(".item", { hasText: "Q3" }).click();
   check("pending answer shown on the sent option with a spinner", await page.locator(".opt.pending[data-opt='B'] .check .spin").count() === 1);
   check("pending thread message shown as sending", await page.locator("aside .msg.pending").count() === 1 && (await page.locator("aside .msg.pending .who").textContent()).includes("sending"));
   check("footer sent note carries a spinner", await page.locator("#staged-list .sent .spin").count() === 1);
-  check("send disabled while pending even with new staging", (await (async () => { await page.locator(".opt[data-opt='A']").click(); return page.locator("#send").isDisabled(); })()));
+  // a discussion message too, so the Send gate is open and only the pending send holds it
+  check("send disabled while pending even with new staging", (await (async () => { await page.locator(".opt[data-opt='A']").click(); await page.locator("#thread-in").fill("Second thought while pending"); await page.locator("#stage-thread").click(); return page.locator("#send").isDisabled(); })()));
 
   // agent working: disabled; after 5 min: enabled with a note
   let s = fixture(); s.agent = { status: "working", since: new Date().toISOString(), handled: 0 }; writeState(s);
@@ -328,6 +349,7 @@ try {
   await page.waitForFunction(() => !document.getElementById("staged-list").textContent.includes("Sent #3"), null, { timeout: 5000 });
   check("first draw in the background: questions view stays, header keeps Visualizing…, no iframe request for v0", await page.locator("body.visualize").count() === 0 && await page.locator("#visualize").isDisabled() && (await page.locator("#visualize").textContent()).includes("Visualizing…") && !((await page.locator("#visual-frame").getAttribute("src")) || "").includes("v=0"));
   await page.locator(".item", { hasText: "Q3" }).click(); await page.locator("#clear-staged").click(); // drop the option staged on q3 while send #2 was pending
+  await page.locator("aside .msg.staged [data-rm]").click(); // and the message staged with it
   await page.locator(".item", { hasText: "Q4" }).click();
   await page.locator("#thread-in").fill("Meanwhile, a question"); await page.locator("#stage-thread").click();
   check("send is enabled while the draw runs", await page.locator("#send").isEnabled() && (await page.locator("#send").textContent()) === "Send 1 to Agent");
@@ -341,6 +363,7 @@ try {
   s.questions[3].thread = [{ who: "user", text: "Meanwhile, a question", at: now }, { who: "agent", text: "Answered while drawing.", at: now }];
   writeState(s);
   await page.waitForFunction(() => !document.getElementById("staged-list").textContent.includes("Sent #4"), null, { timeout: 5000 });
+  await page.locator(".item", { hasText: "Q4" }).click(); // handled jumps the selection to the first open question, the deferred q2
   check("mid-draw send handled: reply shown, still drawing, still on the questions", (await page.locator("aside").textContent()).includes("Answered while drawing.") && await page.locator("aside .msg.pending").count() === 0 && await page.locator("body.visualize").count() === 0 && await page.locator("#visualize").isDisabled());
   // a first draw that runs over ten minutes releases the header button so the user can try again
   s.visual.drawing = { since: new Date(Date.now() - 11 * 60 * 1000).toISOString(), seq: 3 }; writeState(s);
@@ -395,6 +418,10 @@ try {
   await page.locator("#visualize").click();
   check("toggling back restores the list and card", await page.locator("body.visualize").count() === 0 && await page.locator("nav .item").count() > 0 && await page.locator(".card").count() === 1 && (await page.locator("#visualize").textContent()).includes("Visual · v2"));
 
+  // Finish gate: the deferred q2 counts as open, so Finish waits; once it is answered Finish flashes
+  check("finish disabled while a question is open, with the reason in its title", await page.locator("#finish").isDisabled() && await page.locator("#finish.ready").count() === 0 && (await page.locator("#finish").getAttribute("title")) === "Finish opens once every question is answered.");
+  s.questions[1].status = "answered"; s.questions[1].answer = { kind: "accept", option: "A" };
+  writeState(s);
   // every question settled → Finish flashes; finish fires at once with whatever is staged
   await page.waitForFunction(() => document.getElementById("finish").classList.contains("ready"), null, { timeout: 5000 });
   check("finish flashes when nothing is open", await page.locator("#finish.ready").count() === 1);
@@ -465,6 +492,8 @@ try {
   check("multi: recorded answer shows every chosen option, nav mark names the set", await page.locator(".opt.chosen").count() === 2 && (await page.locator(".item", { hasText: "Q6" }).locator(".mark").textContent()).includes("A + B"));
   await page.locator('.opt[data-opt="C"]').click();
   check("multi: changing an answer starts from the recorded set", await page.locator(".opt.staged").count() === 3 && await page.locator(".opt.chosen").count() === 0);
+  // q2-q4 are still open, so a discussion message carries these partial answers through the Send gate
+  await page.locator("#thread-in").fill("Adding C on purpose"); await page.locator("#stage-thread").click();
   await page.locator("#send").click();
   const multiEv = JSON.parse(await srv.nth(2));
   const a5 = multiEv.actions.find((a) => a.q === "q5"), a6 = multiEv.actions.find((a) => a.q === "q6");
@@ -544,6 +573,11 @@ try {
   s.agent = { status: "waiting", since: new Date().toISOString(), handled: typedEv.seq };
   writeState(s);
   await page.waitForFunction((n) => document.getElementById("agent-status").textContent.includes("handled #" + n), typedEv.seq);
+  check("finish stays disabled while q2-q5 are open", await page.locator("#finish").isDisabled() && (await page.locator("#finish").getAttribute("title")) === "Finish opens once every question is answered.");
+  for (const q of s.questions) if (q.status !== "answered") { q.status = "answered"; q.answer = { kind: "accept", ...(q.multi ? { options: q.rec.options } : q.rec.option ? { option: q.rec.option } : {}) }; }
+  writeState(s);
+  await page.waitForFunction(() => { const f = document.getElementById("finish"); return !!f && !f.disabled; }, null, { timeout: 5000 });
+  check("finish enabled once every question is answered", await page.locator("#finish.ready").count() === 1);
   await page.locator("#thread-in").fill("Typed before finishing");
   await page.route("**/send", rejectSend);
   await page.locator("#finish").click(); await page.locator("#finish-yes").click();
