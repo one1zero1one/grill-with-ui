@@ -50,7 +50,7 @@
   .card { max-width: 760px; animation: rise .35s ease-out both; }
   @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
   .crumb { font-family: var(--mono); font-size: 12px; color: var(--ink-3); display: flex; gap: 14px; }
-  .crumb .deps a { color: var(--ox); text-decoration: none; border-bottom: 1px dotted var(--ox); }
+  .crumb .deps a { color: var(--ox); text-decoration-line: underline; text-decoration-style: dotted; text-decoration-thickness: 1px; text-underline-offset: 3px; }
   .card h2 { font-family: var(--serif); font-weight: 400; font-size: 34px; line-height: 1.1; margin: 10px 0 14px; font-variation-settings: "opsz" 72; }
   .card .body { font-size: 16px; color: var(--ink); max-width: 64ch; }
   .opts { list-style: none; padding: 0; margin: 22px 0 0; display: grid; gap: 8px; }
@@ -291,7 +291,7 @@ let selected = "q15";
 document.getElementById("doc-path").textContent = "→ " + S.doc;
 const stagedCount = () => Object.values(staged).reduce((n, s) => n + (s.answer ? 1 : 0) + (s.thread ? s.thread.length : 0), 0);
 function renderNav() {
-  const nav = document.getElementById("nav"); nav.innerHTML = "";
+  const nav = document.getElementById("nav"); nav.replaceChildren();
   for (const r of S.rounds) {
     const isCur = r.n === S.rounds.length;
     const h = document.createElement("div"); h.className = "round" + (isCur ? " current" : "");

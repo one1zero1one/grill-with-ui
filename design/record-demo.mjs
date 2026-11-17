@@ -274,7 +274,7 @@ try {
     write(base({ questions: [...round1, ...round2], agent: { status: "working", since: new Date().toISOString(), handled: 0 } }));
     await sleep(2400);                                                   // the agent reads and answers
 
-    const answered = JSON.parse(JSON.stringify(round2));
+    const answered = structuredClone(round2);
     answered[0].status = "answered"; answered[0].answer = { kind: "accept", option: "B" };
     answered[1].thread = [{ who: "user", text: QUESTION, at: now }, { who: "agent", text: REPLY, at: now }];
     const state = base({

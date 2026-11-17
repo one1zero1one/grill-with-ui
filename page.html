@@ -346,7 +346,7 @@ function toggleOption(q, k) {
 }
 function stageKeys(q, keys) {
   const order = (q.options || []).map((o) => o.k);
-  const sorted = keys.slice().sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const sorted = keys.toSorted((a, b) => order.indexOf(a) - order.indexOf(b));
   stageAnswer(q.id, { kind: sameKeys(sorted, recKeys(q)) ? "accept" : "option", options: sorted });
 }
 function stageThread(id, text) { const s = st(id); (s.thread = s.thread || []).push(text); if (local.drafts[id]) delete local.drafts[id].thread; commit(); }
@@ -530,7 +530,7 @@ function renderVisualizeButton() {
 function renderVisual() {
   const v = visual(); const strip = $("visual-strip"); const frame = $("visual-frame");
   const wait = $("visual-wait");
-  if (!v) { strip.innerHTML = ""; wait.hidden = true; frame.hidden = false; if (frame.dataset.v) { frame.removeAttribute("src"); delete frame.dataset.v; } return; }
+  if (!v) { strip.replaceChildren(); wait.hidden = true; frame.hidden = false; if (frame.dataset.v) { frame.removeAttribute("src"); delete frame.dataset.v; } return; }
   if (!hasVisual()) { // first draw still running: no file to show yet, never request v0
     if (frame.dataset.v) { frame.removeAttribute("src"); delete frame.dataset.v; }
     frame.hidden = true; wait.hidden = false;
@@ -560,7 +560,7 @@ function renderStatus() {
   else { dot.className = "dot"; txt.textContent = `Agent waiting for you${a.since ? " · since " + timeOf(a.since) : ""}${a.handled ? " · handled #" + a.handled : ""}`; }
 }
 function renderNav() {
-  const nav = $("nav"); nav.innerHTML = "";
+  const nav = $("nav"); nav.replaceChildren();
   if (!S) return;
   if (S.note) { const n = document.createElement("div"); n.className = "note"; n.textContent = S.note; nav.appendChild(n); }
   const all = rounds();
@@ -647,7 +647,7 @@ function renderAside() {
   const aside = $("aside");
   if (activeView() === "visualize") return renderFeedback(aside);
   const q = byId(selected);
-  if (!q) { aside.innerHTML = ""; return; }
+  if (!q) { aside.replaceChildren(); return; }
   const s = local.staged[q.id] || {}; const lk = locked(); const d = local.drafts[q.id] || {};
   const thread = Array.isArray(q.thread) ? q.thread : [];
   const msgs = thread.map((m) => `<div class="msg ${m.who === "agent" ? "agent" : "user"}"><div class="who">${esc(m.who)}${m.at ? " · " + timeOf(m.at) : ""}</div><div class="text">${esc(m.text)}</div></div>`).join("")
@@ -703,7 +703,7 @@ function renderFooter() {
   const note = loose.length ? ` <span class="warn" id="unstaged-note">${loose.length > 1 ? "Typed answers on " + loose.join(", ") + " are" : "Typed answer on " + loose[0] + " is"} not staged and will not be sent; press Stage text to include ${loose.length > 1 ? "them" : "it"}.</span>` : "";
   list.innerHTML = locked() ? "This grill is finished." : (n ? `<b>${n} staged</b> · ${parts.join(" · ")}${sent ? " · " + sent : ""}` : sent || "Nothing staged. Pick an option or write in the discussion.") + note;
   const fa = $("finish-area");
-  if (locked()) fa.innerHTML = "";
+  if (locked()) fa.replaceChildren();
   else if (isFinishing()) fa.innerHTML = `<button id="finish" type="button" disabled><span class="spin"></span>Finishing…</button>`;
   else if (confirmFinish) fa.innerHTML = `<span class="confirm">Finish this grill? Everything staged goes with it; this confirms you share an understanding, and the agent writes the outcome in the terminal and stops. <button id="finish-yes" class="ready" type="button">Finish grill</button><button id="finish-no" type="button">Cancel</button></span>`;
   else {

@@ -294,7 +294,7 @@ let selected = "q15";
 document.getElementById("doc-path").textContent = S.doc;
 const stagedCount = () => Object.values(staged).reduce((n, s) => n + (s.answer ? 1 : 0) + (s.thread ? s.thread.length : 0), 0);
 function renderNav() {
-  const nav = document.getElementById("nav"); nav.innerHTML = "";
+  const nav = document.getElementById("nav"); nav.replaceChildren();
   for (const r of S.rounds) {
     const isCur = r.n === S.rounds.length;
     const h = document.createElement("div"); h.className = "round" + (isCur ? " current" : "");
